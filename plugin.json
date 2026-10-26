@@ -1,0 +1,16 @@
+{
+  "format": "mdo.plugin.v1",
+  "id": "mohists",
+  "name": "墨者 · Mohists",
+  "version": "0.1.0",
+  "description": "按需分工、多轮成员和协作聊天。各有所长，协力成事。",
+  "author": "xywhsoft",
+  "license": "MIT",
+  "entry": {"native": "runtime-src/plugin.c"},
+  "overrides": [
+    {"source": "roles/coordinator.md", "target": "default-home/agents/mohists.md"},
+    {"source": "roles/researcher.md", "target": "default-home/subagents/mohists-researcher.md"},
+    {"source": "roles/worker.md", "target": "default-home/subagents/mohists-worker.md"},
+    {"source": "roles/reviewer.md", "target": "default-home/subagents/mohists-reviewer.md"}
+  ]
+}

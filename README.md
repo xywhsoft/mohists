@@ -1,0 +1,27 @@
+# 墨者 · Mohists
+
+各有所长，协力成事。
+
+墨者是 mdo 的可选多智能体协作插件。简单任务由协调者直接完成；复杂任务按需要分派给研究、执行与复核成员。成员保留自己的上下文，任务、定向消息、恢复与权限复用 mdo Application SDK。
+
+## 本地开发
+
+开发和测试只使用本仓库的一个运行目录，不创建隔离测试环境。默认引用同级 `../mdo` 的现有宿主和 SDK，仅部署约 9 MiB 的应用文件，可使用 `--mdo` 指定已有源码目录。
+
+```powershell
+python tools/dev.py setup
+python tools/dev.py start
+python tools/dev.py status
+python tools/dev.py install
+python tools/dev.py stop
+```
+
+`runtime/` 保存本项目的 mdo 配置、日志和 Home；不要提交账号、凭据或会话。开发实例只监听 `127.0.0.1`。安装插件需要按宿主规则重启实例。已有的用户 mdo 不受影响。
+
+## 实现边界
+
+- 普通可选 Agent，不替换全局默认 Agent。
+- C 实现协作能力，配置与 Markdown 定义角色，原生前端 SDK 提供界面。
+- 复用原生持久成员、共享任务、邮箱、CAS 状态、取消和恢复，不创建重复数据库。
+- 单线程开发，每个可验证阶段提交到 `master`；测试也直接在项目运行目录顺序进行。
+- 完整范围、阶段状态和待办见 [实施记录](docs/implementation.md)。

@@ -1,0 +1,7 @@
+runtime/
+dist/
+__pycache__/
+*.pyc
+*.dmp
+.env
+*.local.json
