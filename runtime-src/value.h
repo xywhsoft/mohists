@@ -5,6 +5,7 @@ typedef struct MhContext {
     const mdo_sdk_context_v1* S;
     const mdo_values_v1* V;
     char Root[128], Group[128];
+    uint64_t Generation;
 } MhContext;
 
 static const char* MhText(const MhContext* C, const xvalue* P, const char* K) {
@@ -69,10 +70,14 @@ static mdo_result MhTeamLoad(MhContext* C, xvalue** Envelope, xvalue** Team, mdo
     const xvalue* V = C->V->Get(*Envelope, "value");
     if (!V) return MhError(E, "mohists_team_missing", "Start a collaboration group first", 404);
     *Team = C->V->Clone(V);
+    C->Generation = MhUInt(C, V, "generation");
     snprintf(C->Group, sizeof(C->Group), "%s.g%llu", C->Root, (unsigned long long)MhUInt(C, V, "generation"));
     if (C->S->Namespace && C->S->Namespace[0] && strcmp(C->S->Namespace, C->Group))
         return MhError(E, "mohists_stale_group", "This member belongs to a previous collaboration group", 409);
     return MDO_RESULT_OK;
+}
+static void MhJobKey(const MhContext* C, const char* Id, char Key[80]) {
+    snprintf(Key, 80, "g%llu.job.%s", (unsigned long long)C->Generation, Id);
 }
 static mdo_result MhCoordinator(const MhContext* C, mdo_error_v1* E) {
     return C->S->MemberId && C->S->MemberId[0] ?

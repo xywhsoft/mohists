@@ -4,7 +4,7 @@
 static mdo_result MhJob(MhContext* C, const char* Id, xvalue** Envelope,
     xvalue** Job, mdo_error_v1* E) {
     if (!MhId(Id, 48)) return MhError(E, "mohists_arguments", "A portable task id of at most 48 characters is required", 400);
-    char Key[80]; snprintf(Key, sizeof(Key), "job.%s", Id);
+    char Key[80]; MhJobKey(C, Id, Key);
     mdo_result Code = MhLoad(C, Key, Envelope, E); if (Code) return Code;
     const xvalue* V = C->V->Get(*Envelope, "value");
     if (!V) return MhError(E, "mohists_task_missing", "Task is unavailable", 404);
@@ -43,18 +43,20 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
         for (size_t J = 0; J < I; ++J) if (!strcmp(D, C->V->Text(C->V->At(Dependencies, J))))
             return MhError(E, "mohists_arguments", "Dependencies must be distinct", 400);
     }
-    char Key[80]; snprintf(Key, sizeof(Key), "job.%s", Id);
+    char Key[80]; MhJobKey(C, Id, Key);
     xvalue *Old = NULL, *Job = NULL; mdo_result Code = MhLoad(C, Key, &Old, E); if (Code) return Code;
     const xvalue* Existing = C->V->Get(Old, "value");
     const xvalue* Binding = C->V->Get(C->V->Get(Team, "roles"), Role);
     Job = C->V->Object(); MhString(C, Job, "id", Id); MhString(C, Job, "role", Role);
     MhString(C, Job, "member", Member); MhString(C, Job, "title", Title); MhString(C, Job, "prompt", Prompt);
-    MhString(C, Job, "agent_id", MhText(C, Binding, "agent_id")); MhString(C, Job, "model_id", MhText(C, Binding, "model_id"));
+    MhString(C, Job, "agent_id", MhText(C, Binding, "agent_id"));
+    MhString(C, Job, "model_binding", MhText(C, Binding, "model_id"));
+    MhString(C, Job, "model_id", MhText(C, Binding, "model_id"));
     MhNumber(C, Job, "generation", MhUInt(C, Team, "generation"));
     MhNumber(C, Job, "constraint_revision", MhUInt(C, Team, "constraint_revision"));
     MhSet(C, Job, "depends_on", Dependencies ? C->V->Clone(Dependencies) : C->V->Array());
     if (Existing) {
-        const char* Fields[] = {"role", "member", "title", "prompt", "agent_id", "model_id"}; bool Same = true;
+        const char* Fields[] = {"role", "member", "title", "prompt", "agent_id", "model_binding"}; bool Same = true;
         for (int I = 0; I < 6; ++I) if (!MhIs(C, Existing, Fields[I], MhText(C, Job, Fields[I]))) Same = false;
         if (MhUInt(C, Existing, "generation") != MhUInt(C, Job, "generation")) Same = false;
         char* A = C->V->Json(C->V->Get(Existing, "depends_on")), *B = C->V->Json(C->V->Get(Job, "depends_on"));
@@ -69,8 +71,19 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
             const char* OtherId = C->V->Text(C->V->At(Jobs, I)); xvalue *JE = NULL, *J = NULL;
             Code = MhJob(C, OtherId, &JE, &J, E);
             bool Conflict = !Code && MhIs(C, J, "member", Member) && !MhIs(C, J, "role", Role);
+            if (!Code && MhIs(C, J, "member", Member) && MhIs(C, Job, "model_id", ""))
+                MhString(C, Job, "model_id", MhText(C, J, "model_id"));
             C->V->Release(JE); C->V->Release(J); if (Code) goto done;
             if (Conflict) { Code = MhError(E, "mohists_member_role", "Reuse members only with their original role", 409); goto done; }
+        }
+        if (MhIs(C, Job, "model_id", "")) {
+            /* Explicit binding wins. Otherwise inherit the owning chat, and
+             * freeze that selection when the member is first created. */
+            xvalue* Q = C->V->Object(), *Path = C->V->Object(), *Owner = NULL;
+            MhString(C, Path, "project", C->S->ProjectId); MhString(C, Path, "session", C->S->SessionId);
+            MhSet(C, Q, "path", Path); Code = MhCall(C, "session.get", Q, &Owner, E);
+            if (!Code) MhString(C, Job, "model_id", MhText(C, C->V->Get(Owner, "data"), "model_id"));
+            C->V->Release(Owner); if (Code) goto done;
         }
         xvalue* Name = C->V->String(Id); C->V->Append((xvalue*)Jobs, Name); C->V->Release(Name);
         MhString(C, Job, "state", "queued"); xvalue* Receipt = NULL;
