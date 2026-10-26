@@ -58,8 +58,8 @@ static bool MhPrompt(const MhContext* C, const xvalue* Team, const char* Task, c
     char* Json = C->V->Json(Body); bool Fits = Json && strlen(Json) <= 7800;
     C->V->Free(Json); C->V->Release(Body); return Fits;
 }
-static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope,
-    xvalue* Team, xvalue** R, mdo_error_v1* E) {
+static mdo_result MhAssignImpl(MhContext* C, const xvalue* P, const xvalue* Envelope,
+    xvalue* Team, const char* MainRun, xvalue** R, mdo_error_v1* E) {
     if (MhCoordinator(C, E)) return MDO_RESULT_ERROR;
     if (!MhIs(C, Team, "state", "active")) return MhError(E, "mohists_team_ended", "The team is no longer accepting work", 409);
     const char* Id = MhText(C, P, "id"), *Role = MhText(C, P, "role"), *Member = MhText(C, P, "member");
@@ -67,7 +67,7 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
     if (!MhId(Id, 48) || !MhId(Member, 48) || MhRole(Role) < 0 || !Title || !Title[0] || strlen(Title) > 512 || !Prompt || !Prompt[0] || strlen(Prompt) > 4096)
         return MhError(E, "mohists_arguments", "Supply id/member/role/title and a prompt of 1..4096 bytes", 400);
     char Combined[10000];
-    if (!MhPrompt(C, Team, Prompt, Combined)) return MhError(E, "mohists_input_limit", "Combined goal and task exceed the native mailbox budget; shorten them or reference files", 413);
+    if (!MainRun && !MhPrompt(C, Team, Prompt, Combined)) return MhError(E, "mohists_input_limit", "Combined goal and task exceed the native mailbox budget; shorten them or reference files", 413);
     const xvalue* Dependencies = C->V->Get(P, "depends_on");
     if (Dependencies && (C->V->Kind(Dependencies) != MDO_VALUE_ARRAY || C->V->Count(Dependencies) > 16))
         return MhError(E, "mohists_arguments", "depends_on must contain at most 16 task ids", 400);
@@ -85,6 +85,8 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
     const xvalue* Binding = C->V->Get(C->V->Get(Team, "roles"), Role);
     Job = C->V->Object(); MhString(C, Job, "id", Id); MhString(C, Job, "role", Role);
     MhString(C, Job, "member", Member); MhString(C, Job, "title", Title); MhString(C, Job, "prompt", Prompt);
+    MhString(C, Job, "author", mdoCallOrigin(C->S) == MDO_ORIGIN_USER ? "user" : "agent");
+    if (MainRun) MhString(C, Job, "main_run_id", MainRun);
     MhString(C, Job, "agent_id", MhText(C, Binding, "agent_id"));
     MhString(C, Job, "model_binding", MhText(C, Binding, "model_id"));
     MhString(C, Job, "model_id", MhText(C, Binding, "model_id"));
@@ -95,6 +97,8 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
         const char* Fields[] = {"role", "member", "title", "prompt", "agent_id", "model_binding"}; bool Same = true;
         for (int I = 0; I < 6; ++I) if (!MhIs(C, Existing, Fields[I], MhText(C, Job, Fields[I]))) Same = false;
         if (MhUInt(C, Existing, "generation") != MhUInt(C, Job, "generation")) Same = false;
+        const char* PriorRun = MhText(C, Existing, "main_run_id");
+        if ((PriorRun || MainRun) && (!PriorRun || !MainRun || strcmp(PriorRun, MainRun))) Same = false;
         char* A = C->V->Json(C->V->Get(Existing, "depends_on")), *B = C->V->Json(C->V->Get(Job, "depends_on"));
         if (!A || !B || strcmp(A, B)) Same = false; C->V->Free(A); C->V->Free(B);
         C->V->Release(Job); Job = C->V->Clone(Existing);
@@ -131,6 +135,10 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
     Code = MhEnsureAssignment(C, Job, R, E);
 done:
     C->V->Release(Job); C->V->Release(Old); return Code;
+}
+static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope,
+    xvalue* Team, xvalue** R, mdo_error_v1* E) {
+    return MhAssignImpl(C, P, Envelope, Team, NULL, R, E);
 }
 
 #endif

@@ -37,15 +37,16 @@ static mdo_result MhFinish(MhContext* C, const char* Id, const xvalue* Outcome,
                 if (MhIs(C, Team, "state", "draining")) MhString(C, Team, "state", "cancelled");
                 else if (MhIs(C, Team, "state", "revising")) MhString(C, Team, "state", "active");
                 else if (MhIs(C, Team, "state", "completing")) MhString(C, Team, "state", "completed");
+                if (MhIs(C, Team, "state", "cancelled") || MhIs(C, Team, "state", "completed")) MhReturnSpeaker(C, Team);
             }
             char Key[80]; MhJobKey(C, Id, Key);
             Code = MhSavePair(C, TE, Team, Key, JE, Job, &Receipt, E);
             if (!Code) {
                 xvalue* Q = MhParams(C, C->Group), *Work = NULL; MhString(C, Q, "id", Id);
                 mdo_result WorkCode = MhCall(C, "work.get", Q, &Work, E);
-                if (!WorkCode && MhIs(C, Work, "state", "claimed")) {
+                if (!WorkCode && !MhIs(C, Work, "state", "completed") && !MhIs(C, Work, "state", "cancelled")) {
                     Q = MhParams(C, C->Group); MhString(C, Q, "id", Id);
-                    if (!strcmp(State, "succeeded")) {
+                    if (!strcmp(State, "succeeded") && MhIs(C, Work, "state", "claimed")) {
                         MhString(C, Q, "claim_token", MhText(C, Job, "claim_token"));
                         xvalue* Value = C->V->Clone(C->V->Get(Job, "result_ref"));
                         MhString(C, Value, "outcome", State); MhSet(C, Q, "result", Value);
@@ -84,9 +85,13 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     bool Resume = MhIs(C, P, "action", "resume");
     bool Schedule = MhIs(C, P, "action", "schedule");
     bool Reserved = MhIs(C, P, "action", "execute_reserved");
+    bool Route = MhIs(C, P, "action", "route_prepare");
     if (!MhIs(C, Team, "state", "active")) return MhError(E, "mohists_team_ended", "This team no longer accepts execution", 409);
     const char* Id = MhText(C, P, "id"); xvalue *JE = NULL, *Job = NULL;
     mdo_result Code = MhJob(C, Id, &JE, &Job, E); if (Code) goto done;
+    if (MhText(C, Job, "main_run_id") && !Route && !Resume) {
+        Code = MhError(E, "mohists_direct_turn", "Main-chat turns are executed by their original native run", 409); goto done;
+    }
     if (MhUInt(C, Job, "generation") != MhUInt(C, Team, "generation") ||
         MhUInt(C, Job, "constraint_revision") != MhUInt(C, Team, "constraint_revision")) {
         Code = MhError(E, "mohists_stale_task", "The task predates the current goal or constraints", 409); goto done;
@@ -136,7 +141,7 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     if (Code) { C->V->Release(Work); goto done; }
     char Prompt[10000], Message[80];
     snprintf(Message, sizeof(Message), "task.%s", Id);
-    if (!MhPrompt(C, Team, MhText(C, Job, "prompt"), Prompt)) { C->V->Release(Work); Code = MhError(E, "mohists_input_limit", "Combined goal and task exceed the native mailbox budget; shorten them or reference files", 413); goto done; }
+    if (!Route && !Resume && !MhPrompt(C, Team, MhText(C, Job, "prompt"), Prompt)) { C->V->Release(Work); Code = MhError(E, "mohists_input_limit", "Combined goal and task exceed the native mailbox budget; shorten them or reference files", 413); goto done; }
     MhString(C, Job, "message_id", Message); MhString(C, Job, "state", "starting");
     char Key[80]; MhJobKey(C, Id, Key); xvalue* Receipt = NULL;
     if (!Reserved) {
@@ -178,10 +183,19 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
         C->V->Release(Receipt); Receipt = NULL; C->V->Release(Latest);
     }
     C->V->Release(Work);
+    if (!Code && Route) {
+        *R = MhParams(C, C->Group); MhString(C, *R, "id", MhText(C, Job, "member"));
+        MhString(C, *R, "message_id", Message); MhEmit(C, "mohists.changed", Job); goto done;
+    }
     if (!Code && !Resume) {
         Q = MhParams(C, C->Group); MhString(C, Q, "id", MhText(C, Job, "member"));
         MhString(C, Q, "message_id", Message); MhString(C, Q, "prompt", Prompt);
-        Code = MhCall(C, "instance.send", Q, &Receipt, E); C->V->Release(Receipt); Receipt = NULL;
+        /* The admission may be pumped by a different user/agent. Preserve the
+         * recorded author's provenance instead of promoting queued text. */
+        mdo_sdk_context_v1 Author = *C->S;
+        Author.Origin = MhIs(C, Job, "author", "user") ? MDO_ORIGIN_USER : MDO_ORIGIN_AGENT;
+        Code = mdoCall(&Author, "instance.send", Q, &Receipt, E); C->V->Release(Q);
+        C->V->Release(Receipt); Receipt = NULL;
     }
     if (!Code) {
         MhEmit(C, "mohists.changed", Job);

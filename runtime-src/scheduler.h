@@ -40,7 +40,7 @@ static mdo_result MhPump(MhContext* C, xvalue** R, mdo_error_v1* E) {
                 if (Code && (!strcmp(E->Code, "mohists_dependencies") || !strcmp(E->Code, "mohists_writer_busy") ||
                     !strcmp(E->Code, "mohists_concurrency") || !strcmp(E->Code, "mohists_task_admitted") ||
                     !strcmp(E->Code, "sdk_state_conflict") || !strcmp(E->Code, "mohists_budget") ||
-                    !strcmp(E->Code, "sdk_operation_limit"))) Code = MDO_RESULT_OK;
+                    !strcmp(E->Code, "sdk_operation_limit") || !strcmp(E->Code, "mohists_member_busy"))) Code = MDO_RESULT_OK;
             }
             C->V->Release(CurrentEnvelope); C->V->Release(Current);
         }

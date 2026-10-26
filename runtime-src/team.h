@@ -10,6 +10,13 @@ static int MhRole(const char* S) {
     return -1;
 }
 #include "settings.h"
+static void MhReturnSpeaker(const MhContext* C, xvalue* Team) {
+    if (MhIs(C, Team, "speaker", "coordinator")) return;
+    MhString(C, Team, "last_speaker", MhText(C, Team, "speaker"));
+    if (C->V->Get(Team, "speaker_binding")) C->V->Set(Team, "last_speaker_binding", C->V->Get(Team, "speaker_binding"));
+    MhString(C, Team, "speaker", "coordinator"); MhSet(C, Team, "speaker_binding", C->V->Object());
+    MhNumber(C, Team, "handoff_revision", MhUInt(C, Team, "handoff_revision") + 1);
+}
 static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v1* E) {
     if (MhCoordinator(C, E)) return MDO_RESULT_ERROR;
     const char* Id = MhText(C, P, "id"), *Goal = MhText(C, P, "goal");

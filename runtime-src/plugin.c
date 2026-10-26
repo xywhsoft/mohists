@@ -13,6 +13,7 @@
 #include "scheduler.h"
 #include "schemas.h"
 #include "history.h"
+#include "handoff.h"
 
 static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     const xvalue* P, xvalue** R, mdo_error_v1* E) {
@@ -29,6 +30,7 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     if (!strcmp(Action, "get")) {
         Code = MhSnapshot(&C, Team, R, E); if (!Code) MhNumber(&C, *R, "revision", MhUInt(&C, Envelope, "revision"));
     } else if (!strcmp(Action, "configure")) Code = MhConfigure(&C, P, Envelope, Team, R, E);
+    else if (!strcmp(Action, "handoff")) Code = MhHandoff(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "assign")) Code = MhAssign(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "execute")) Code = MhExecute(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "execute_reserved")) {
@@ -113,6 +115,12 @@ static mdo_result Register(const mdo_host_services_v1* H,
     T.ParametersJson = "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"enum\":[\"get\",\"result\",\"message\",\"inbox\",\"ack\"]},\"id\":{\"type\":\"string\"},\"to\":{\"type\":\"string\"},\"message_id\":{\"type\":\"string\"},\"text\":{\"type\":\"string\"},\"after\":{\"type\":\"integer\",\"minimum\":0}},\"required\":[\"action\"]}";
     T.Effects = MDO_TOOL_EFFECT_READ; T.PermissionResource = NULL;
     if (R->AddTool(R->Context, &T, Error, Capacity)) return MDO_RESULT_ERROR;
+    mdo_hook_v1 Hook = {sizeof(Hook), 1, "mohists.route", "run.route", 0, true, NULL, MhRoute};
+    if (R->AddHook(R->Context, &Hook, Error, Capacity)) return MDO_RESULT_ERROR;
+    Hook.Id = "mohists.finished"; Hook.Topic = "run.finished"; Hook.Transform = false; Hook.Execute = MhRouteFinished;
+    if (R->AddHook(R->Context, &Hook, Error, Capacity)) return MDO_RESULT_ERROR;
+    Hook.Id = "mohists.released"; Hook.Topic = "instance.released"; Hook.Execute = MhReleased;
+    if (R->AddHook(R->Context, &Hook, Error, Capacity)) return MDO_RESULT_ERROR;
     mdo_lifecycle_v1 L = {0}; L.Size = sizeof(L); L.AbiVersion = 1;
     L.Id = "mohists.policy"; L.Priority = -100; L.ObserveOnly = false;
     L.Phases = MDO_AGENT_PHASE_BIT(MDO_AGENT_CONTEXT) | MDO_AGENT_PHASE_BIT(MDO_AGENT_RUN_PREPARE) | MDO_AGENT_PHASE_BIT(MDO_AGENT_BEFORE_REQUEST) |

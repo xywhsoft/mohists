@@ -1,6 +1,6 @@
 {
   "repository": "../mdo",
-  "minimum_source_commit": "4a408681e49b1fbf8c41bf65d5bac7967828d802",
+  "minimum_source_commit": "c8c3cc7e",
   "sdk_abi": 1,
   "required_methods": ["instance.history", "instance.recovery", "instance.step", "state.transaction", "operation.start"]
 }

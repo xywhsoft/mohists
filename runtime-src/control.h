@@ -121,6 +121,7 @@ static mdo_result MhControl(MhContext* C, const xvalue* P, const char* Action,
     Code = MhTeamLoad(C, &CurrentEnvelope, &Current, E);
     if (!Code && !C->V->Count(C->V->Get(Current, "active"))) {
         MhString(C, Current, "state", Revise ? "active" : Finish ? "completed" : "cancelled");
+        if (!Revise) MhReturnSpeaker(C, Current);
         Code = MhSave(C, "team", MhUInt(C, CurrentEnvelope, "revision"), Current, &Receipt, E);
         C->V->Release(Receipt);
     }
