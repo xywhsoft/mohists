@@ -12,6 +12,7 @@
 #include "recovery.h"
 #include "scheduler.h"
 #include "schemas.h"
+#include "history.h"
 
 static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     const xvalue* P, xvalue** R, mdo_error_v1* E) {
@@ -45,6 +46,7 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
         else Code = !strcmp(Action, "resume") ? MhExecute(&C, P, Envelope, Team, R, E) : MhAbandon(&C, P, R, E);
     }
     else if (!strcmp(Action, "result")) Code = MhResult(&C, P, Team, R, E);
+    else if (!strcmp(Action, "history")) Code = MhHistory(&C, P, R, E);
     else if (!strcmp(Action, "message") || !strcmp(Action, "inbox") || !strcmp(Action, "ack")) Code = MhMessages(&C, P, Action, R, E);
     else if (!strcmp(Action, "cancel") || !strcmp(Action, "stop") || !strcmp(Action, "revise") || !strcmp(Action, "finish"))
         Code = MhControl(&C, P, Action, Envelope, Team, R, E);

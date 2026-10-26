@@ -18,6 +18,7 @@ python tools/dev.py stop
 
 `runtime/` 保存本项目的 mdo 配置、日志和 Home；不要提交账号、凭据或会话。开发实例只监听 `127.0.0.1`。安装插件需要按宿主规则重启实例。已有的用户 mdo 不受影响。
 启动时会注册“墨者 · Mohists”项目，工作区直接绑定本仓库。自动测试使用同一个运行实例和 Home，不创建额外部署目录。
+已有 mdo 源码需要包含 [mdo-runtime.json](mdo-runtime.json) 中的 SDK 基线；公开成员历史接口的宿主改动已独立提交到 mdo 主分支。
 
 ## 实现边界
 

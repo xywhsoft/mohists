@@ -60,6 +60,13 @@ def setup(mdo, port):
     if (RUNTIME / "process.json").exists():
         raise RuntimeError("Stop the project instance before changing its environment")
     mdo = mdo.resolve()
+    baseline_path = ROOT / "mdo-runtime.json"
+    if baseline_path.exists():
+        baseline = read_json(baseline_path)
+        check = subprocess.run(["git", "-C", str(mdo), "merge-base", "--is-ancestor",
+            baseline["minimum_source_commit"], "HEAD"], capture_output=True)
+        if check.returncode:
+            raise RuntimeError("Update the existing mdo source to the SDK baseline in mdo-runtime.json; no copy was created")
     host = mdo / ".build/host" / ("xs.exe" if os.name == "nt" else "linux-server-glibc/xs")
     if not host.is_file() or not (mdo / "app/generated/mdo_unity.c").is_file():
         raise RuntimeError("The referenced mdo runtime and generated application must already exist")

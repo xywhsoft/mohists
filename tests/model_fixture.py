@@ -13,10 +13,18 @@ class Model(BaseHTTPRequestHandler):
         self.server.entered.set()
         if self.server.blocked:
             self.server.release.wait(12)
-        text = f"member result {len(self.server.requests)}"
+        text = self.server.reply if self.server.reply is not None else f"member result {len(self.server.requests)}"
+        delta = {"role": "assistant", "content": text}
+        if self.server.reasoning: delta["reasoning_content"] = self.server.reasoning
+        finish = "stop"
+        if self.server.tool_call and not any(m.get("role") == "tool" for m in value.get("messages", [])):
+            delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "mohists-history-tool", "type": "function",
+                "function": {"name": "mohists_mail", "arguments": json.dumps({"action": "message", "to": "coordinator",
+                    "message_id": "history-tool-message", "text": "visible-tool-body"})}}]}
+            finish = "tool_calls"
         chunks = [
-            {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}}]},
-            {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": delta}]},
+            {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
                 "usage": {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}}]
         data = ("".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n").encode()
         try:
@@ -33,6 +41,9 @@ class LocalModel:
         self.server = HTTPServer(("127.0.0.1", 0), Model)
         self.server.requests = []
         self.server.blocked = False
+        self.server.reply = None
+        self.server.reasoning = None
+        self.server.tool_call = False
         self.server.entered = threading.Event()
         self.server.release = threading.Event()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
