@@ -80,6 +80,12 @@ def main():
         denied_job = next(j for j in after["assignment_items"] if j["state"] == "failed")
         work = call("work.get", {"namespace": f"mohists.{owner}.g1", "id": denied_job["id"]}, context=ctx)
         assert work["state"] == "cancelled", work
+        assert team("configure", status=400, expected_revision=team("get")["revision"], max_calls=3)["code"] == "mohists_budget_used"
+        assert team("configure", status=409, expected_revision=team("get")["revision"], roles=after["roles"])["code"] == "mohists_bindings_frozen"
+        raised = team("configure", expected_revision=team("get")["revision"], max_calls=6, concurrency=1)
+        assert raised["calls_used"] == 4 and raised["max_calls"] == 6
+        assert wait(run("Continue after the user's budget adjustment")["id"])["state"] == "succeeded"
+        assert team("get")["calls_used"] == 5
         assert select("coordinator")["last_speaker"] == "scholar"
         model.server.reply = "Coordinator uses a real history reference"
         assert wait(run("Please continue as coordinator")["id"])["agent_id"] == "agent.mohists"

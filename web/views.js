@@ -62,7 +62,7 @@ async function catalogs(sdk, signal) {
   const [agents, models] = await Promise.all([sdk.call("agents.list", {}, { signal }), sdk.call("models.list", {}, { signal })]);
   return { agents: agents.data.items, models: models.data.models };
 }
-function configurationFields(root, settings, catalog, global) {
+function configurationFields(root, settings, catalog, global, locked = false) {
   if (global) {
     const mode = field(root, "何时分工", "select");
     selectOptions(mode, [["automatic", "按需自动分工"], ["requested", "仅在我从协作窗口开始后分工"]], settings.mode);
@@ -72,7 +72,7 @@ function configurationFields(root, settings, catalog, global) {
   selectOptions(review, [["automatic", "协调者按任务需要决定"], ["always", "执行任务完成后必须独立复核"], ["off", "不自动分派复核"]], settings.review || "automatic");
   const cols = el("div", "mh-columns"); root.append(cols);
   const concurrency = field(cols, "同时运行的成员", "number", settings.concurrency); concurrency.min = "1"; concurrency.max = "3";
-  const calls = field(cols, "累计成员轮次上限", "number", settings.max_calls); calls.min = "1"; calls.max = "128";
+  const calls = field(cols, "累计成员轮次上限", "number", settings.max_calls); calls.min = String(Math.max(1, settings.calls_used || 0)); calls.max = "128";
   const roles = {};
   for (const r of ["researcher", "worker", "reviewer"]) {
     root.append(el("h4", "", roleName(r))); const group = el("div", "mh-columns"); root.append(group);
@@ -83,10 +83,11 @@ function configurationFields(root, settings, catalog, global) {
     const model = field(group, "模型", "select"), models = [["", "沿用当前会话"], ...catalog.models.map(m => [m.id, m.name || m.id])];
     if (settings.roles[r].model_id && !models.some(([m]) => m === settings.roles[r].model_id)) models.push([settings.roles[r].model_id, `不可用 · ${settings.roles[r].model_id}`]);
     selectOptions(model, models, settings.roles[r].model_id); roles[r] = [agent, model];
+    agent.disabled = model.disabled = locked;
   }
   return () => ({ ...(global ? { mode: root._mode.value } : {}), review: review.value,
     concurrency: Number(concurrency.value), max_calls: Number(calls.value),
-    roles: Object.fromEntries(Object.entries(roles).map(([r, [a, m]]) => [r, { agent_id: a.value, model_id: m.value }])) });
+    ...(locked ? {} : { roles: Object.fromEntries(Object.entries(roles).map(([r, [a, m]]) => [r, { agent_id: a.value, model_id: m.value }])) }) });
 }
 export async function openDefaults(sdk, store, signal) {
   const [current, catalog] = await Promise.all([sdk.call("mohists.settings", { action: "get" }, { signal }), catalogs(sdk, signal)]);
@@ -101,8 +102,8 @@ export async function openTeamConfig(sdk, store, signal) {
   const team = store.state.team, generation = team.generation, revision = team.revision;
   const catalog = await catalogs(sdk, signal); if (signal?.aborted) return; groupChanged(store, generation);
   return windowForm(sdk, { store, title: "本次协作设置", render(root) {
-    const read = configurationFields(root, team, catalog, false);
-    root.append(el("p", "mh-form-hint", "仅在分派任务前设置。已创建成员的角色和模型绑定保持固定；自定义研究和复核角色同样只读。"));
+    const read = configurationFields(root, team, catalog, false, team.jobs.length > 0);
+    root.append(el("p", "mh-form-hint", "累计预算可以调整，不会清零已用轮次。降低并发仅影响新轮次；现有任务继续运行。首次分派后角色和模型保持固定；研究和复核角色同样只读。"));
     return () => ({ expected_revision: revision, ...read() });
   }, async submit(params) { groupChanged(store, generation); await store.mutate("configure", params, generation); } });
 }
@@ -116,6 +117,18 @@ export function openStart(sdk, store) {
   }, submit: p => store.mutate("start", p, generation) });
 }
 
+const speakerName = team => team.speaker && team.speaker !== "coordinator" ? `${roleName(team.speaker_binding?.role)} · ${team.speaker}` : "协调者";
+export function openHandoff(sdk, store, job, generation = store.state.team.generation) {
+  groupChanged(store, generation);
+  const team = store.state.team, target = job?.member || "coordinator";
+  return windowForm(sdk, { store, title: job ? "让此成员主讲" : "返回协调者", save: "确认交接", render(root) {
+    root.append(el("h3", "", job ? `${roleName(job.role)} · ${job.member}` : "协调者"));
+    root.append(el("p", "", job ? "之后在主聊天输入的消息将直接交给此成员，沿用它已有的上下文、角色、模型和权限。实际回复与工具调用显示在主聊天中。" : "之后的主输入由原协调者处理。它可以读取刚才成员的真实历史，成员上下文继续保留。"));
+    root.append(el("p", "mh-form-hint", "交接不会更改全局 Agent，也不会自动运行任务。成员主讲同样消耗本组累计轮次。主对话运行期间请先停止或等待完成。"));
+    return () => ({ member: target, expected_revision: team.revision });
+  }, async submit(params) { groupChanged(store, generation); await store.mutate("handoff", params, generation); } });
+}
+
 export function mountSummary(root, { sdk, store, openPanel }) {
   root.classList.add("mh");
   return store.subscribe(({ team, error, operationError }) => {
@@ -124,6 +137,8 @@ export function mountSummary(root, { sdk, store, openPanel }) {
     if (error) { box.append(el("p", "mh-error", errorText(error)), button("重新读取", () => store.refresh())); return; }
     box.append(append(el("div", "mh-line"), el("strong", "mh-grow", "墨者 · 分工协作"), tag(team.state), button("查看分工", openPanel)));
     box.append(el("p", "mh-muted", team.goal)); const jobs = el("div", "mh-summary-jobs"); box.append(jobs);
+    const speaker = append(el("div", "mh-line"), el("span", "mh-grow mh-muted", `当前主讲：${speakerName(team)}`)); box.append(speaker);
+    if (team.speaker !== "coordinator") speaker.append(button("返回协调者", () => openHandoff(sdk, store)));
     if (operationError) box.append(el("p", "mh-error", errorText(operationError)));
     const counts = new Map(); for (const job of team.assignment_items) counts.set(job.state, (counts.get(job.state) || 0) + 1);
     for (const [state, count] of counts) jobs.append(el("span", "mh-tag", `${stateName(state)} ${count}`));
@@ -143,10 +158,13 @@ export function mountPanel(root, { sdk, store, openMember, signal }) {
     if (!team) { box.append(el("p", "mh-muted", "按需分工，成员独立保留上下文。"), button("开始协作", () => openStart(sdk, store), "mh-primary")); return; }
     box.append(append(el("div", "mh-line"), tag(team.state), el("span", "mh-muted", `成员轮次 ${team.calls_used} / ${team.max_calls} · 并行上限 ${team.concurrency}`)));
     box.append(el("p", "", team.goal));
+    const speaker = append(el("div", "mh-card mh-stack"), el("strong", "", `当前主讲：${speakerName(team)}`)); box.append(speaker);
+    if (team.speaker_binding?.model_id) speaker.append(el("p", "mh-muted", team.speaker_binding.model_id));
+    if (team.speaker !== "coordinator") speaker.append(button("返回协调者", () => openHandoff(sdk, store)));
     const operations = el("div", "mh-line"); box.append(operations);
     if (team.state === "active") {
       operations.append(button("分派任务", () => openAssignment(sdk, store), "mh-primary"));
-      if (!team.jobs.length) operations.append(button("协作设置", () => perform(() => openTeamConfig(sdk, store, signal))));
+      operations.append(button("协作设置", () => perform(() => openTeamConfig(sdk, store, signal))));
       if (team.assignment_items.some(j => j.state === "queued")) operations.append(button("运行排队任务", () => perform(() => store.mutate("run"))));
       operations.append(button("停止全部", () => perform(() => store.mutate("stop", { expected_revision: team.revision })), "mh-danger"));
       if (!team.active.length) operations.append(button("结束协作", () => perform(() => store.mutate("finish", { expected_revision: team.revision }))));
@@ -172,10 +190,11 @@ export function openMember(sdk, store, job, generation) {
       const outcomeError = el("p", "mh-error");
       root.append(box); box.append(status, el("h3", "", job.title), outcomeError, notice, history);
       const more = button("加载更多记录", () => void read()); box.append(more);
-      const guide = button("指导成员", () => openAssignment(sdk, store, job), "mh-primary");
+      const guide = button("指导成员", () => openAssignment(sdk, store, job));
+      const handoff = button("让此成员主讲", () => openHandoff(sdk, store, job, generation), "mh-primary");
       const stop = button("停止任务", () => void action(() => store.mutate("cancel", { id: job.id }, generation)), "mh-danger");
       const recover = button("处理中断", () => openRecovery(sdk, store, job, generation)); recover.hidden = true;
-      layer.footer.append(append(el("div", "mh-footer"), fault, guide, recover, stop, button("关闭", () => layer.close())));
+      layer.footer.append(append(el("div", "mh-footer"), fault, guide, handoff, recover, stop, button("关闭", () => layer.close())));
       let cursor = 0, reading = false, timer, groupStale = false, lastMessage, empty;
       const streamed = new Set();
       const started = new Set();
@@ -226,6 +245,10 @@ export function openMember(sdk, store, job, generation) {
         status.replaceChildren(tag(groupStale ? job.state : current?.state || job.state), el("span", "mh-muted", `任务组 ${generation} · ${job.agent_id}`));
         outcomeError.textContent = (groupStale ? job.error : current?.error) || "";
         guide.disabled = state.busy || groupStale || state.team?.state !== "active";
+        handoff.disabled = state.busy || groupStale || state.team?.state !== "active" || state.team?.active.length > 0 ||
+          state.team?.assignment_items.some(j => j.member === job.member && j.state === "requires_review");
+        handoff.textContent = state.team?.speaker === job.member ? "当前主讲" : "让此成员主讲";
+        if (state.team?.speaker === job.member) handoff.disabled = true;
         stop.disabled = state.busy || groupStale || terminal(current?.state || job.state);
         recover.hidden = groupStale || (current?.state || job.state) !== "requires_review";
         recover.disabled = state.busy;

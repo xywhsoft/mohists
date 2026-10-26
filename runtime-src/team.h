@@ -72,10 +72,12 @@ static mdo_result MhConfigure(MhContext* C, const xvalue* P, const xvalue* Envel
     if (MhCoordinator(C, E)) return MDO_RESULT_ERROR;
     if (MhUInt(C, P, "expected_revision") != MhUInt(C, Envelope, "revision"))
         return MhError(E, "mohists_conflict", "Read the current team revision before editing", 409);
-    if (C->V->Count(C->V->Get(Team, "active")) || C->V->Count(C->V->Get(Team, "jobs")))
-        return MhError(E, "mohists_team_busy", "Configure role bindings before submitting work", 409);
     if (mdoCallOrigin(C->S) != MDO_ORIGIN_USER)
         return MhError(E,"mohists_settings_user","Only the user can change budgets and role bindings",403);
+    if (!MhIs(C, Team, "state", "active"))
+        return MhError(E, "mohists_team_ended", "Only an active team accepts configuration changes", 409);
+    if (C->V->Get(P, "roles") && C->V->Count(C->V->Get(Team, "jobs")))
+        return MhError(E, "mohists_bindings_frozen", "Existing assignments keep their role and model bindings; budgets remain adjustable", 409);
     if (C->V->Get(P,"review")) {
         if (!MhChoice(C,P,"review","automatic","always","off")) return MhError(E,"mohists_arguments","Unknown review policy",400);
         MhString(C,Team,"review",MhText(C,P,"review"));
@@ -96,6 +98,8 @@ static mdo_result MhConfigure(MhContext* C, const xvalue* P, const xvalue* Envel
     for (int I = 0; I < 2; ++I) if (C->V->Get(P, Numbers[I])) {
         uint64_t N = MhUInt(C, P, Numbers[I]); if (!N || N > Max[I])
             return MhError(E, "mohists_arguments", "concurrency must be 1..3 and max_calls 1..128", 400);
+        if (I == 1 && N < MhUInt(C, Team, "calls_used"))
+            return MhError(E, "mohists_budget_used", "The cumulative limit cannot be lower than already admitted member turns", 400);
         MhNumber(C, Team, Numbers[I], N);
     }
     xvalue* Receipt = NULL; mdo_result Code = MhSave(C, "team", MhUInt(C, Envelope, "revision"), Team, &Receipt, E);
