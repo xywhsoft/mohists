@@ -2,6 +2,7 @@
 #define MOHISTS_TEAM_H
 
 static const char* MhRoles[] = {"researcher", "worker", "reviewer"};
+static mdo_result MhAssignments(MhContext*, const xvalue*, xvalue**, mdo_error_v1*);
 static const char* MhAgents[] = {"subagent.mohists-researcher", "subagent.mohists-worker", "subagent.mohists-reviewer"};
 static int MhRole(const char* S) {
     for (int I = 0; I < 3; ++I) if (S && !strcmp(S, MhRoles[I])) return I;
@@ -14,6 +15,9 @@ static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v
         return MhError(E, "mohists_arguments", "Supply a portable id and a goal of 1..4096 UTF-8 bytes", 400);
     xvalue* Old = NULL; mdo_result Code = MhLoad(C, "team", &Old, E); if (Code) return Code;
     const xvalue* Previous = C->V->Get(Old, "value");
+    if (C->V->Get(P, "expected_generation") && MhUInt(C, P, "expected_generation") != MhUInt(C, Previous, "generation")) {
+        C->V->Release(Old); return MhError(E, "mohists_stale_group", "Refresh the current collaboration group before starting another", 409);
+    }
     if (MhIs(C, Previous, "id", Id)) {
         if (!MhIs(C, Previous, "goal", Goal)) Code = MhError(E, "mohists_identity_conflict", "Group id already has another goal", 409);
         else *R = C->V->Clone(Previous);
@@ -42,6 +46,9 @@ static mdo_result MhSnapshot(MhContext* C, const xvalue* Team, xvalue** R, mdo_e
     if (!Code) C->V->Set(*R, "tasks", Items); C->V->Release(Items); Items = NULL;
     if (!Code) Code = MhCall(C, "instance.list", MhParams(C, C->Group), &Items, E);
     if (!Code) C->V->Set(*R, "members", Items); C->V->Release(Items);
+    Items = NULL;
+    if (!Code) Code = MhAssignments(C, Team, &Items, E);
+    if (!Code) C->V->Set(*R, "assignment_items", Items); C->V->Release(Items);
     return Code;
 }
 static mdo_result MhConfigure(MhContext* C, const xvalue* P, const xvalue* Envelope,

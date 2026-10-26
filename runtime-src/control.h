@@ -13,7 +13,10 @@ static mdo_result MhCancelJobOnce(MhContext* C, const char* Id, const char* Reas
     if (Code) goto done;
     if (MhTerminal(C, Job)) { *R = C->V->Clone(Job); goto done; }
     bool Active = MhIs(C, Job, "state", "running") || MhIs(C, Job, "state", "starting") || MhIs(C, Job, "state", "cancelling");
-    MhString(C, Job, "state", Active ? "cancelling" : !strcmp(Reason, "constraints_changed") ? "stale" : "cancelled");
+    /* Cancellation is not a decision about an uncertain prior side effect.
+     * Keep the explicit abandon/recovery path available. */
+    if (!MhIs(C, Job, "state", "requires_review"))
+        MhString(C, Job, "state", Active ? "cancelling" : !strcmp(Reason, "constraints_changed") ? "stale" : "cancelled");
     MhString(C, Job, "cancel_reason", Reason);
     char Key[80]; MhJobKey(C, Id, Key);
     Code = MhSavePair(C, TE, Team, Key, JE, Job, &Receipt, E); C->V->Release(Receipt); Receipt = NULL;

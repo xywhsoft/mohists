@@ -23,6 +23,9 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     if (!strcmp(Action, "start")) return MhStart(&C, P, R, E);
     xvalue *Envelope = NULL, *Team = NULL;
     Code = MhTeamLoad(&C, &Envelope, &Team, E); if (Code) goto done;
+    if (C.V->Get(P, "expected_generation") && MhUInt(&C, P, "expected_generation") != C.Generation) {
+        Code = MhError(E, "mohists_stale_group", "This window belongs to an earlier collaboration group; reopen it before making changes", 409); goto done;
+    }
     if (!strcmp(Action, "get")) {
         Code = MhSnapshot(&C, Team, R, E); if (!Code) MhNumber(&C, *R, "revision", MhUInt(&C, Envelope, "revision"));
     } else if (!strcmp(Action, "configure")) Code = MhConfigure(&C, P, Envelope, Team, R, E);

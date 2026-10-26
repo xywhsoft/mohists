@@ -24,7 +24,14 @@ static mdo_result MhPolicy(void* User, mdo_agent_phase Phase,
             xvalue *JE = NULL, *Job = NULL;
             mdo_result Check = MhJob(&C, C.V->Text(C.V->At(Active, I)), &JE, &Job, &E);
             if (!Check && MhIs(&C, Job, "member", A->MemberId) && MhIs(&C, Job, "state", "running") &&
-                MhIs(&C, Team, "state", "active") && MhUInt(&C, Job, "constraint_revision") == MhUInt(&C, Team, "constraint_revision")) Allowed = true;
+                MhIs(&C, Team, "state", "active") && MhUInt(&C, Job, "constraint_revision") == MhUInt(&C, Team, "constraint_revision")) {
+                Allowed = true;
+                xwork_agent_extension_context* Native = mdoAgentNative(A);
+                const xwork_hook_event* Event = Native ? Native->pToolEvent : NULL;
+                if (Phase == MDO_AGENT_BEFORE_TOOL && Event && !MhIs(&C, Job, "role", "worker") &&
+                    (Event->uEffects & ~((uint64_t)MDO_TOOL_EFFECT_READ)))
+                    Code = MhError(&E, "mohists_read_only", "Research and review members may only use read-only tools, including with custom role bindings", 403);
+            }
             C.V->Release(JE); C.V->Release(Job); if (Check) { Code = Check; break; }
         }
         if (!Code && !Allowed) Code = MhError(&E, "mohists_cancelled", "This member's task was cancelled, superseded or never admitted", 499);

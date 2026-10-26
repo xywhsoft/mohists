@@ -18,9 +18,10 @@ class Model(BaseHTTPRequestHandler):
         if self.server.reasoning: delta["reasoning_content"] = self.server.reasoning
         finish = "stop"
         if self.server.tool_call and not any(m.get("role") == "tool" for m in value.get("messages", [])):
+            name, args = self.server.tool_override or ("mohists_mail", {"action": "message", "to": "coordinator",
+                "message_id": "history-tool-message", "text": "visible-tool-body"})
             delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "mohists-history-tool", "type": "function",
-                "function": {"name": "mohists_mail", "arguments": json.dumps({"action": "message", "to": "coordinator",
-                    "message_id": "history-tool-message", "text": "visible-tool-body"})}}]}
+                "function": {"name": name, "arguments": json.dumps(args)}}]}
             finish = "tool_calls"
         chunks = [
             {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": delta}]},
@@ -44,6 +45,7 @@ class LocalModel:
         self.server.reply = None
         self.server.reasoning = None
         self.server.tool_call = False
+        self.server.tool_override = None
         self.server.entered = threading.Event()
         self.server.release = threading.Event()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
