@@ -21,7 +21,7 @@ export function installStyles() {
 .mh-card {border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;background:var(--surface-raised);overflow-wrap:anywhere}
 .mh-summary {max-width:50rem;margin:1rem auto;width:100%;padding:1rem;display:flex;flex-direction:column;gap:.6rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface)}
 .mh-summary:empty {display:none}.mh-summary-jobs {display:flex;gap:.4rem;flex-wrap:wrap}
-.mh-panel {padding:1rem;min-height:100%;background:var(--bg)}
+.mh-panel {padding:1rem;min-height:0;background:var(--bg)}
 .mh-list {display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius-md);overflow:clip}
 .mh-row {display:flex;gap:.65rem;align-items:center;padding:.85rem;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--ink);text-align:left;font:inherit;width:100%;cursor:pointer}
 .mh-row:last-child {border-bottom:0}.mh-row:hover {background:var(--surface-hover)}
