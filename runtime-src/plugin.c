@@ -102,8 +102,9 @@ static mdo_result Register(const mdo_host_services_v1* H,
      * accept handoff buttons while silently running the coordinator instead. */
     if (!H || H->Size < offsetof(mdo_host_services_v1, Application) + sizeof(H->Application) || !H->Application || !H->Application->Api ||
         H->Application->Api->Size < offsetof(mdo_application_v1, Builtin) + sizeof(H->Application->Api->Builtin) ||
-        !H->Application->Api->Builtin || !H->Application->Api->Builtin("session.execution")) {
-        snprintf(Error, Capacity, "Mohists requires an mdo host with persistent main-member routing and session.execution. Upgrade the mdo runtime before enabling this plugin.");
+        !H->Application->Api->Builtin || !H->Application->Api->Builtin("session.execution") ||
+        !H->Application->Api->Builtin("session.mark_external_state")) {
+        snprintf(Error, Capacity, "Mohists requires an mdo host with persistent main-member routing, session.execution and session.mark_external_state. Upgrade the mdo runtime before enabling this plugin.");
         return MDO_RESULT_ERROR;
     }
     mdo_service_v1 S = {sizeof(S), 1, "mohists.status", "Mohists status",

@@ -10,6 +10,10 @@ static int MhRole(const char* S) {
     return -1;
 }
 #include "settings.h"
+static mdo_result MhExternalState(MhContext* C,mdo_error_v1* E) {
+    xvalue* Receipt=NULL;mdo_result Code=MhCall(C,"session.mark_external_state",C->V->Object(),&Receipt,E);
+    C->V->Release(Receipt);return Code;
+}
 static void MhReturnSpeaker(const MhContext* C, xvalue* Team) {
     if (MhIs(C, Team, "speaker", "coordinator")) return;
     MhString(C, Team, "last_speaker", MhText(C, Team, "speaker"));
@@ -29,7 +33,7 @@ static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v
     }
     if (MhIs(C, Previous, "id", Id)) {
         if (!MhIs(C, Previous, "goal", Goal)) Code = MhError(E, "mohists_identity_conflict", "Group id already has another goal", 409);
-        else *R = C->V->Clone(Previous);
+        else {Code=MhExternalState(C,E);if(!Code)*R = C->V->Clone(Previous);}
         C->V->Release(Old); return Code;
     }
     if (Previous && !MhIs(C, Previous, "state", "completed") && !MhIs(C, Previous, "state", "cancelled")) {
@@ -44,6 +48,8 @@ static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v
     Code = MhSettingsLoad(C,&DefaultsEnvelope,&Defaults,E); C->V->Release(DefaultsEnvelope);
     if (!Code && MhIs(C,Defaults,"mode","requested") && mdoCallOrigin(C->S) != MDO_ORIGIN_USER)
         Code = MhError(E,"mohists_requested_only","User selected requested collaboration; start a team explicitly from the collaboration window",403);
+    if (Code) { C->V->Release(Defaults); C->V->Release(Old); return Code; }
+    Code=MhExternalState(C,E);
     if (Code) { C->V->Release(Defaults); C->V->Release(Old); return Code; }
     xvalue* Team = C->V->Parse("{\"schema\":\"mohists.team.v1\",\"state\":\"active\",\"constraint_revision\":1,\"calls_used\":0,\"jobs\":[],\"active\":[],\"speaker\":\"coordinator\"}");
     const char* DefaultsKeys[] = {"mode","review","concurrency","max_calls","roles"};
