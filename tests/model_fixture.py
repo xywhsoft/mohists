@@ -10,28 +10,37 @@ class Model(BaseHTTPRequestHandler):
     def do_POST(self):
         value = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.server.requests.append(value)
+        self.server.entered.set()
+        if self.server.blocked:
+            self.server.release.wait(12)
         text = f"member result {len(self.server.requests)}"
         chunks = [
             {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}}]},
             {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}}]
         data = ("".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n").encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError): pass
 
 
 class LocalModel:
     def __enter__(self):
         self.server = HTTPServer(("127.0.0.1", 0), Model)
         self.server.requests = []
+        self.server.blocked = False
+        self.server.entered = threading.Event()
+        self.server.release = threading.Event()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         return self
 
     def __exit__(self, *args):
+        self.server.release.set()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()

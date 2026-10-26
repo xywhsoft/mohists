@@ -20,7 +20,7 @@ static mdo_result MhFinish(MhContext* C, const char* Id, const xvalue* Outcome,
                 MhUInt(C, Team, "constraint_revision") != MhUInt(C, Job, "constraint_revision");
             const char* State = MhText(C, Outcome, "outcome");
             if (!State || Uncertain) State = "requires_review";
-            if (MhIs(C, Job, "state", "cancelling")) State = "cancelled";
+            if (MhIs(C, Job, "state", "cancelling")) State = MhIs(C, Job, "cancel_reason", "constraints_changed") ? "stale" : "cancelled";
             else if (Stale) State = "stale";
             MhString(C, Job, "state", State); MhString(C, Job, "outcome", MhText(C, Outcome, "outcome"));
             const char* Error = MhText(C, Outcome, "error");
@@ -31,6 +31,11 @@ static mdo_result MhFinish(MhContext* C, const char* Id, const xvalue* Outcome,
             MhString(C, Ref, "message_id", MhText(C, Job, "message_id"));
             MhNumber(C, Ref, "generation", MhUInt(C, Job, "generation")); MhSet(C, Job, "result_ref", Ref);
             MhRemoveActive(C, Team, Id);
+            if (!C->V->Count(C->V->Get(Team, "active"))) {
+                if (MhIs(C, Team, "state", "draining")) MhString(C, Team, "state", "cancelled");
+                else if (MhIs(C, Team, "state", "revising")) MhString(C, Team, "state", "active");
+                else if (MhIs(C, Team, "state", "completing")) MhString(C, Team, "state", "completed");
+            }
             char Key[80]; MhJobKey(C, Id, Key);
             Code = MhSavePair(C, TE, Team, Key, JE, Job, &Receipt, E);
             if (!Code) {
@@ -116,6 +121,8 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     if (!Code) {
         MhString(C, Job, "claim_token", MhText(C, Work, "claim_token")); MhString(C, Job, "state", "running");
         xvalue* Latest = NULL; Code = MhLoad(C, Key, &Latest, E);
+        if (!Code && !MhIs(C, C->V->Get(Latest, "value"), "state", "starting"))
+            Code = MhError(E, "mohists_cancelled", "Task was cancelled before its member started", 499);
         if (!Code) Code = MhSave(C, Key, MhUInt(C, Latest, "revision"), Job, &Receipt, E);
         C->V->Release(Receipt); Receipt = NULL; C->V->Release(Latest);
     }

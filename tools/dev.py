@@ -151,7 +151,10 @@ def install():
     files = [{"path": path.relative_to(ROOT).as_posix(), "text": path.read_text(encoding="utf-8")}
         for directory in ("runtime-src", "roles", "web")
         for path in sorted((ROOT / directory).rglob("*")) if path.is_file()]
-    call("plugin.apply", {"id": manifest["id"], "manifest": manifest, "files": files})
+    applied = call("plugin.apply", {"id": manifest["id"], "manifest": manifest, "files": files})
+    if any(p["id"] == manifest["id"] and p["enabled"] for p in applied["items"]):
+        print(json.dumps({k: applied.get(k) for k in ("pending", "restart_required", "recovery_mode")}))
+        return
     plan = call("plugin.plan", {"changes": [{"id": manifest["id"], "enabled": True}]})
     if not plan["allowed"]:
         raise RuntimeError(plan)
