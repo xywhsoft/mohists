@@ -15,6 +15,7 @@ export function createStores({ delay = (fn, ms) => setTimeout(fn, ms), cancel = 
       const api = sdk.bind(context), abort = new AbortController(), listeners = new Set();
       const operations = new Set();
       let refs = 0, timer, pending, after = 0, epoch = "", last = "", busy = false;
+      let execution = "";
       const state = { team: null, error: null, operationError: null, loading: true, busy: false };
       const emit = () => { for (const fn of listeners) fn(state); };
       const call = (action, params = {}, options = {}) => api.call("mohists.team", { action, ...params }, { signal: abort.signal, ...options });
@@ -23,6 +24,16 @@ export function createStores({ delay = (fn, ms) => setTimeout(fn, ms), cancel = 
         pending = (async () => {
           try {
             state.team = await call(reconcile ? "refresh" : "get"); state.error = null;
+            if (typeof state.team.speaker === "string") {
+              const member = state.team.members?.find(item => item.id === state.team.speaker);
+              const next = JSON.stringify([state.team.speaker, state.team.handoff_revision, member?.revision, member?.state]);
+              if (next !== execution) {
+                execution = next;
+                // Read-only host refresh; it preserves drafts/streams and uses
+                // the bound displaying window even for a remote conversation.
+                Promise.resolve(sdk.ui?.refreshSession?.()).catch(() => { execution = ""; });
+              }
+            }
           } catch (error) {
             if (error.code === "mohists_team_missing") { state.team = null; state.error = null; }
             else if (!abort.signal.aborted) state.error = error;

@@ -27,6 +27,20 @@ test("shared read lifecycle is fixed to one session; closing all views never can
   assert.equal(f.calls.some(c => c.method === "operation.cancel"), false); unsub(); f.pool.dispose();
 });
 
+test("speaker and native member revisions refresh the bound host projection without a second transport", async () => {
+  const f = fixture(); let refreshed = 0;
+  f.sdk.ui = { refreshSession: async () => { refreshed++; } };
+  f.setTeam({ generation: 1, speaker: "writer", handoff_revision: 1, members: [{ id: "writer", revision: 3, state: "idle" }] });
+  const store = f.pool.acquire(f.sdk); await flush(); assert.equal(refreshed, 1);
+  await store.refresh(); assert.equal(refreshed, 1);
+  f.setTeam({ generation: 1, speaker: "writer", handoff_revision: 1, members: [{ id: "writer", revision: 4, state: "idle" }] });
+  await store.refresh(); assert.equal(refreshed, 2);
+  f.setTeam({ generation: 1, speaker: "coordinator", handoff_revision: 2, members: [] });
+  await store.refresh(); assert.equal(refreshed, 3);
+  assert.equal(f.calls.some(c => c.method === "ui.invoke"), false);
+  store.release(); f.pool.dispose();
+});
+
 test("unrelated session events do not reload; owned changes reload and stale generation is rejected", async () => {
   const f = fixture(), s = f.pool.acquire(f.sdk); await flush();
   const before = f.calls.length; f.setEvents([{ project: "other", session: "owner" }]);

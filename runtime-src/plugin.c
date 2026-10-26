@@ -97,7 +97,15 @@ static mdo_result Status(void* User, const mdo_sdk_context_v1* C,
 
 static mdo_result Register(const mdo_host_services_v1* H,
     const mdo_registrar_v1* R, void** Data, char* Error, size_t Capacity) {
-    (void)H; (void)Data;
+    (void)Data;
+    /* The ABI alone does not promise newer hook topics. Old hosts must not
+     * accept handoff buttons while silently running the coordinator instead. */
+    if (!H || H->Size < offsetof(mdo_host_services_v1, Application) + sizeof(H->Application) || !H->Application || !H->Application->Api ||
+        H->Application->Api->Size < offsetof(mdo_application_v1, Builtin) + sizeof(H->Application->Api->Builtin) ||
+        !H->Application->Api->Builtin || !H->Application->Api->Builtin("session.execution")) {
+        snprintf(Error, Capacity, "Mohists requires an mdo host with persistent main-member routing and session.execution. Upgrade the mdo runtime before enabling this plugin.");
+        return MDO_RESULT_ERROR;
+    }
     mdo_service_v1 S = {sizeof(S), 1, "mohists.status", "Mohists status",
         "{}", "{}", MDO_TOOL_EFFECT_READ, NULL, Status};
     if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;
