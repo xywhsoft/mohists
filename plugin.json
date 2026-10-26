@@ -6,7 +6,7 @@
   "description": "按需分工、多轮成员和协作聊天。各有所长，协力成事。",
   "author": "xywhsoft",
   "license": "MIT",
-  "entry": {"native": "runtime-src/plugin.c"},
+  "entry": {"native": "runtime-src/plugin.c", "frontend": "web/main.js"},
   "overrides": [
     {"source": "roles/coordinator.md", "target": "default-home/agents/mohists.md"},
     {"source": "roles/researcher.md", "target": "default-home/subagents/mohists-researcher.md"},
