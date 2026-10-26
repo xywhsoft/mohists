@@ -58,6 +58,12 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
         Code = MhControl(&C, P, Action, Envelope, Team, R, E);
     else Code = MhError(E, "mohists_action", "Unknown team action", 400);
 done:
+    /* Managed recovery releases its native writer before MhExecute settles
+     * the outer task. Pump again after that settlement so dependencies do
+     * not wait forever for another unrelated completion. */
+    if (!Code && (!strcmp(Action, "execute") || !strcmp(Action, "resume") || !strcmp(Action, "abandon"))) {
+        xvalue* Next = NULL; mdo_error_v1 X = {0}; MhPump(&C, &Next, &X); C.V->Release(Next);
+    }
     C.V->Release(Team); C.V->Release(Envelope); return Code;
 }
 
