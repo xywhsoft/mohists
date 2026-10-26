@@ -1,6 +1,17 @@
 #ifndef MOHISTS_RECOVERY_H
 #define MOHISTS_RECOVERY_H
 
+static mdo_result MhRecoveryView(MhContext* C, const xvalue* P, const xvalue* Team, xvalue** R, mdo_error_v1* E) {
+    if (C->S->RunId && C->S->RunId[0]) return MhError(E, "mohists_recovery_user", "Recovery decisions require a user window", 403);
+    mdo_result Code = MhResult(C, P, Team, R, E);
+    if (!Code) {
+        xvalue* Q = MhParams(C, C->Group), *View = NULL; MhString(C, Q, "id", MhText(C, *R, "member"));
+        Code = MhCall(C, "instance.recovery", Q, &View, E);
+        if (!Code) C->V->Set(*R, "recovery", View); C->V->Release(View);
+    }
+    return Code;
+}
+
 /* Reconnect refresh harvests durable outcomes, never restarts a member. A
  * missing completion is made explicit instead of guessing which effect ran. */
 static mdo_result MhRefresh(MhContext* C, const xvalue* Team, xvalue** R, mdo_error_v1* E) {

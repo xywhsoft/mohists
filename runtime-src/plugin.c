@@ -44,6 +44,7 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     else if (!strcmp(Action, "run")) Code = MhRun(&C, P, Team, R, E);
     else if (!strcmp(Action, "wait")) Code = MhWait(&C, P, R, E);
     else if (!strcmp(Action, "refresh")) Code = MhRefresh(&C, Team, R, E);
+    else if (!strcmp(Action, "recovery")) Code = MhRecoveryView(&C, P, Team, R, E);
     else if (!strcmp(Action, "resume") || !strcmp(Action, "abandon")) {
         if (S->RunId && S->RunId[0]) Code = MhError(E, "mohists_recovery_user", "Recovery requires an explicit user decision", 403);
         else Code = !strcmp(Action, "resume") ? MhExecute(&C, P, Envelope, Team, R, E) : MhAbandon(&C, P, R, E);

@@ -13,8 +13,9 @@ export function createStores({ delay = (fn, ms) => setTimeout(fn, ms), cancel = 
     let store = stores.get(key);
     if (!store) {
       const api = sdk.bind(context), abort = new AbortController(), listeners = new Set();
+      const operations = new Set();
       let refs = 0, timer, pending, after = 0, epoch = "", last = "", busy = false;
-      const state = { team: null, error: null, loading: true, busy: false };
+      const state = { team: null, error: null, operationError: null, loading: true, busy: false };
       const emit = () => { for (const fn of listeners) fn(state); };
       const call = (action, params = {}, options = {}) => api.call("mohists.team", { action, ...params }, { signal: abort.signal, ...options });
       const refresh = async (reconcile = false) => {
@@ -37,6 +38,16 @@ export function createStores({ delay = (fn, ms) => setTimeout(fn, ms), cancel = 
       };
       const poll = async () => {
         try {
+          for (const id of operations) {
+            const info = await api.wait(id, 0, { signal: abort.signal });
+            if (info.terminal) {
+              operations.delete(id);
+              if (info.state !== "succeeded" || info.receipt_uncertain) state.operationError = Object.assign(
+                Error(info.error?.message || "操作收据未确认，请查看任务状态后再决定"), { code: info.error?.code });
+              if (!info.receipt_uncertain) await api.call("operation.release", { id }, { signal: abort.signal });
+              await refresh(); emit();
+            }
+          }
           const events = await api.events({ after, ...(epoch ? { epoch } : {}), topic: "mohists.changed", limit: 128 }, { signal: abort.signal });
           after = events.cursor; epoch = events.epoch;
           if (events.resync_required || events.items.some(e => e.project === context.project && e.session === context.session)) await refresh();
@@ -54,6 +65,14 @@ export function createStores({ delay = (fn, ms) => setTimeout(fn, ms), cancel = 
           try { return await call(action, { ...params, expected_generation: generation }); }
           finally { busy = state.busy = false; await refresh(); emit(); }
         },
+        async background(action, params, generation, operationId) {
+          if (busy) throw Error("请等待当前操作完成");
+          busy = state.busy = true; state.operationError = null; emit();
+          try {
+            const receipt = await api.start("mohists.team", { action, ...params, expected_generation: generation }, operationId, { signal: abort.signal });
+            operations.add(receipt.id); return receipt;
+          } finally { busy = state.busy = false; await refresh(); emit(); }
+        },
         dispose() { abort.abort(); cancel(timer); listeners.clear(); },
       };
       stores.set(key, store); void refresh().then(() => { if (!abort.signal.aborted) void poll(); });
@@ -70,4 +89,12 @@ export const stateName = state => ({ active: "协作中", queued: "待运行", s
 export const terminal = state => ["succeeded", "failed", "cancelled", "stale", "timed_out", "limited"].includes(state);
 export function groupChanged(store, generation) {
   if (store.state.team?.generation !== generation) throw Error("任务组已经变化。请关闭此窗口，重新选择当前成员。");
+}
+// Native event/run IDs can restart with the host. Only continuation chunks
+// (positive exact byte offsets) may join a prior non-stream event.
+export function historyFragment(event, previous) {
+  const key = `${event.message_id}:${event.run_id}:${event.kind}:${event.kind === "model_text_delta" ? "stream" : event.source_event_id}`;
+  const offset = event.text_offset || 0;
+  return { key, end: offset + new TextEncoder().encode(event.text || "").length,
+    join: previous?.key === key && (event.kind === "model_text_delta" || offset > 0 && previous.end === offset) };
 }

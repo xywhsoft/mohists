@@ -98,6 +98,13 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     if (Resume && MhUInt(C, P, "expected_revision") != MhUInt(C, JE, "revision")) {
         Code = MhError(E, "mohists_conflict", "Inspect the interrupted task's current revision before resuming", 409); goto done;
     }
+    if (Resume && C->V->Get(P, "expected_recovery_token")) {
+        xvalue* Q = MhParams(C, C->Group), *View = NULL; MhString(C, Q, "id", MhText(C, Job, "member"));
+        Code = MhCall(C, "instance.recovery", Q, &View, E);
+        if (!Code && !MhIs(C, View, "recovery_token", MhText(C, P, "expected_recovery_token")))
+            Code = MhError(E, "mohists_conflict", "Native recovery details changed; inspect them again before deciding", 409);
+        C->V->Release(View); if (Code) goto done;
+    }
     if (!Reserved && MhUInt(C, Team, "calls_used") >= MhUInt(C, Team, "max_calls")) {
         Code = MhError(E, "mohists_budget", "The cumulative member-turn budget is exhausted", 429); goto done;
     }
@@ -179,6 +186,7 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
         if (Resume) {
             MhString(C, Q, "message_id", Message);
             MhNumber(C, Q, "expected_revision", MhUInt(C, P, "expected_member_revision"));
+            if (C->V->Get(P, "expected_recovery_token")) C->V->Set(Q, "expected_recovery_token", C->V->Get(P, "expected_recovery_token"));
             if (C->V->Get(P, "decisions")) C->V->Set(Q, "decisions", C->V->Get(P, "decisions"));
         }
         Code = MhCall(C, Resume ? "instance.resume" : "instance.step", Q, &Receipt, E);

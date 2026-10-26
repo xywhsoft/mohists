@@ -32,6 +32,12 @@ def main():
             interrupted = team("result", id=id)
             assert interrupted["state"] == "requires_review" and interrupted["member_state"]["state"] == "requires_review", interrupted
             assert team("get")["active"] == []
+            view = team("recovery", id=id)["recovery"]
+            assert view["available"] and view["resume_required"] and view["items"] == []
+            assert view["revision"] == interrupted["member_state"]["revision"]
+            assert view == team("recovery", id=id)["recovery"], "Reading decisions cannot alter the ledger or revision"
+            assert len(model.server.requests) == before
+            interrupted["recovery"] = view
             return interrupted, before
         team("start", id="recover", goal="Resume or abandon only after explicit review")
         team("assign", id="first", member="worker", role="worker", title="First", prompt="marker-recover-first")
@@ -40,8 +46,11 @@ def main():
         assert team("resume", id="first", status=409, expected_revision=0)["code"] == "mohists_conflict"
         current = team("result", id="first")
         assert team("get")["calls_used"] == 1, "Rejected stale recovery must not consume a budget slot"
+        assert team("resume", id="first", status=409, expected_revision=current["revision"],
+            expected_member_revision=current["member_state"]["revision"], expected_recovery_token="0" * 64)["code"] == "mohists_conflict"
+        assert team("get")["calls_used"] == 1, "A stale recovery view must not consume a turn"
         result = team("resume", id="first", expected_revision=current["revision"],
-            expected_member_revision=current["member_state"]["revision"])
+            expected_member_revision=current["member_state"]["revision"], expected_recovery_token=interrupted["recovery"]["recovery_token"])
         assert result["state"] == "succeeded", result
         assert len(model.server.requests) == before + 1
         users = [m["content"] for m in model.server.requests[-1]["messages"] if m["role"] == "user"]
