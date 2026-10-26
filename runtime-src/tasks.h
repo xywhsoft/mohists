@@ -100,6 +100,8 @@ static mdo_result MhAssign(MhContext* C, const xvalue* P, const xvalue* Envelope
         C->V->Release(Job); Job = C->V->Clone(Existing);
         if (!Same) { Code = MhError(E, "mohists_identity_conflict", "Task id already refers to another assignment", 409); goto done; }
     } else {
+        xvalue* Selected=C->V->Object(); C->V->Set(Selected,Role,Binding);
+        Code=MhBindingsAvailable(C,Selected,E); C->V->Release(Selected); if (Code) goto done;
         const xvalue* Jobs = C->V->Get(Team, "jobs");
         if (C->V->Count(Jobs) >= 64) { Code = MhError(E, "mohists_task_limit", "A group retains at most 64 tasks", 413); goto done; }
         /* A member's identity fixes its role binding for this task group. */

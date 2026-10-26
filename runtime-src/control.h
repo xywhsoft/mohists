@@ -6,6 +6,30 @@ static bool MhTerminal(const MhContext* C, const xvalue* Job) {
     for (int I = 0; I < 6; ++I) if (MhIs(C, Job, "state", States[I])) return true;
     return false;
 }
+static mdo_result MhReviewComplete(MhContext* C, const xvalue* Team, mdo_error_v1* E) {
+    if (!MhIs(C,Team,"review","always")) return MDO_RESULT_OK;
+    const xvalue* Jobs=C->V->Get(Team,"jobs");
+    for (size_t I=0; I<C->V->Count(Jobs); ++I) {
+        xvalue *WE=NULL,*Worker=NULL; mdo_result Code=MhJob(C,C->V->Text(C->V->At(Jobs,I)),&WE,&Worker,E);
+        bool Needs=!Code && MhIs(C,Worker,"role","worker") && MhIs(C,Worker,"state","succeeded") &&
+            MhUInt(C,Worker,"constraint_revision")==MhUInt(C,Team,"constraint_revision");
+        bool Covered=false;
+        for (size_t J=0; !Code && Needs && !Covered && J<C->V->Count(Jobs); ++J) {
+            xvalue *RE=NULL,*Reviewer=NULL; Code=MhJob(C,C->V->Text(C->V->At(Jobs,J)),&RE,&Reviewer,E);
+            if (!Code && MhIs(C,Reviewer,"role","reviewer") && MhIs(C,Reviewer,"state","succeeded") &&
+                MhUInt(C,Reviewer,"constraint_revision")==MhUInt(C,Team,"constraint_revision")) {
+                const xvalue* Dependencies=C->V->Get(Reviewer,"depends_on");
+                for (size_t K=0; K<C->V->Count(Dependencies); ++K)
+                    if (!strcmp(C->V->Text(C->V->At(Dependencies,K)),MhText(C,Worker,"id"))) Covered=true;
+            }
+            C->V->Release(RE); C->V->Release(Reviewer);
+        }
+        C->V->Release(WE); C->V->Release(Worker);
+        if (Code) return Code;
+        if (Needs && !Covered) return MhError(E,"mohists_review_required","Review policy requires a successful independent reviewer depending on each completed worker task",409);
+    }
+    return MDO_RESULT_OK;
+}
 static mdo_result MhCancelJobOnce(MhContext* C, const char* Id, const char* Reason,
     xvalue** R, mdo_error_v1* E) {
     xvalue *TE = NULL, *Team = NULL, *JE = NULL, *Job = NULL, *Receipt = NULL;
@@ -62,6 +86,7 @@ static mdo_result MhControl(MhContext* C, const xvalue* P, const char* Action,
     }
     if (Finish && C->V->Count(C->V->Get(Team, "active")))
         return MhError(E, "mohists_team_busy", "Finish only after all active member turns have drained", 409);
+    if (Finish) { mdo_result Review=MhReviewComplete(C,Team,E); if (Review) return Review; }
     const char* Goal = MhText(C, P, "goal");
     if (Revise && (!Goal || !Goal[0] || strlen(Goal) > 4096))
         return MhError(E, "mohists_arguments", "A revised goal of 1..4096 bytes is required", 400);

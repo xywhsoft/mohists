@@ -13,8 +13,8 @@ export function activate(sdk) {
   const open = async bound => {
     if (globalThis.matchMedia("(max-width: 760px)").matches) {
       bound.ui.layers.open({ title: "墨者协作", icon: "branch", width: "92%", height: "88%", mobile: "fullscreen",
-        render(root, { layer }) {
-          const store = stores.acquire(bound), dispose = mountPanel(root, { sdk: bound, store, openMember });
+        render(root, { layer, signal }) {
+          const store = stores.acquire(bound), dispose = mountPanel(root, { sdk: bound, store, openMember, signal });
           const close = document.createElement("button"); close.className = "mh-button"; close.textContent = "关闭";
           close.onclick = () => layer.close(); layer.footer.append(close);
           return () => { dispose(); store.release(); };
@@ -23,7 +23,7 @@ export function activate(sdk) {
   };
   sdk.ui.registerPanel("mohists.collaboration", { title: "墨者协作", placement: "right", scope: "session",
     mount(root, { sdk, signal }) {
-      const store = stores.acquire(sdk), dispose = mountPanel(root, { sdk, store, openMember });
+      const store = stores.acquire(sdk), dispose = mountPanel(root, { sdk, store, openMember, signal });
       return () => { dispose(); store.release(); };
     } });
   sdk.ui.registerConversationAction("mohists.open", { label: "墨者协作", icon: "branch", when: eligible,

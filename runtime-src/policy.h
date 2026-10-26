@@ -49,6 +49,23 @@ static mdo_result MhPolicy(void* User, mdo_agent_phase Phase,
             }
         }
     }
+    if (!Code && Coordinator && Phase == MDO_AGENT_CONTEXT) {
+        xvalue *DE=NULL,*Defaults=NULL;
+        const xvalue* Config=Team;
+        if (!Config) { Code=MhSettingsLoad(&C,&DE,&Defaults,&E); Config=Defaults; }
+        xvalue* Source=mdoAgentContextSource(A,"system");
+        const char* Before=MhText(&C,Source,"text");
+        const char* Mode=MhIs(&C,Config,"mode","requested") ?
+            "Only start collaboration after the user explicitly starts a team in the collaboration window. Otherwise work directly; do not bypass with ordinary delegation." :
+            "Use collaboration only when division of work has actual value. Handle simple work directly.";
+        const char* Review=MhIs(&C,Config,"review","always") ?
+            "Every completed worker task needs a successful independent reviewer task with depends_on naming that worker task before finish. Reserve review turns in the cumulative budget." :
+            MhIs(&C,Config,"review","off") ? "Do not automatically create review tasks. The user can still explicitly ask for review." :
+            "Choose independent review when changes or uncertainty warrant it; do not force a review pipeline for simple tasks.";
+        char* Text=!Code && Before ? xrtFormat("%s\nMohists user preferences:\n%s\n%s",Before,Mode,Review) : NULL;
+        if (!Code && (!Text || !mdoAgentSetContextText(A,"system",Text))) Code=MhError(&E,"mohists_context","Cannot apply collaboration preferences",500);
+        xrtFree(Text); C.V->Release(DE); C.V->Release(Defaults);
+    }
     C.V->Release(Envelope); C.V->Release(Team);
     if (Code) snprintf(Error, Capacity, "%s", E.Message);
     return Code;

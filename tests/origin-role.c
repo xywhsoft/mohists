@@ -8,6 +8,9 @@ static mdo_result Drive(void* U,const mdo_agent_context_v1* F,char* Error,size_t
     P=V->Parse("{\"action\":\"recovery\",\"id\":\"inspect\"}");
     Code=mdoCall(C,"mohists.team",P,&R,&E);V->Release(P);P=NULL;V->Release(R);R=NULL;
     if(Code==MDO_RESULT_OK||strcmp(E.Code,"mohists_recovery_user")){snprintf(Error,N,"Root C Agent was accepted as a user");Code=MDO_RESULT_ERROR;goto done;}
+    P=V->Parse("{\"action\":\"save\",\"expected_revision\":0}");
+    Code=mdoCall(C,"mohists.settings",P,&R,&E);V->Release(P);P=NULL;V->Release(R);R=NULL;
+    if(Code==MDO_RESULT_OK||strcmp(E.Code,"mohists_settings_user")){snprintf(Error,N,"Root C Agent changed user defaults");Code=MDO_RESULT_ERROR;goto done;}
     P=V->Parse("{\"action\":\"message\",\"to\":\"coordinator\",\"message_id\":\"root-c\",\"text\":\"C agent is not human authorization\"}");
     Code=mdoCall(C,"mohists.team",P,&R,&E);V->Release(P);P=NULL;V->Release(R);R=NULL;if(Code)goto done;
     P=V->Parse("{\"method\":\"sdk.context\"}");Code=mdoCall(C,"operation.start",P,&R,&E);V->Release(P);P=NULL;

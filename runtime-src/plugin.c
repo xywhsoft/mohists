@@ -96,6 +96,9 @@ static mdo_result Register(const mdo_host_services_v1* H,
     S.Id = "mohists.team"; S.Description = "Durable session-scoped collaboration";
     S.Execute = TeamCall;
     if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;
+    S.Id = "mohists.settings"; S.Description = "User-owned device collaboration defaults"; S.Execute = MhSettings;
+    if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;
+    S.Execute = TeamCall;
     S.Id = "mohists.worker"; S.Description = "Execute one recorded background admission"; S.UserData = (void*)1;
     if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;
     mdo_tool_v1 T = {0}; T.Size = sizeof(T); T.AbiVersion = 1;
@@ -112,7 +115,7 @@ static mdo_result Register(const mdo_host_services_v1* H,
     if (R->AddTool(R->Context, &T, Error, Capacity)) return MDO_RESULT_ERROR;
     mdo_lifecycle_v1 L = {0}; L.Size = sizeof(L); L.AbiVersion = 1;
     L.Id = "mohists.policy"; L.Priority = -100; L.ObserveOnly = false;
-    L.Phases = MDO_AGENT_PHASE_BIT(MDO_AGENT_RUN_PREPARE) | MDO_AGENT_PHASE_BIT(MDO_AGENT_BEFORE_REQUEST) |
+    L.Phases = MDO_AGENT_PHASE_BIT(MDO_AGENT_CONTEXT) | MDO_AGENT_PHASE_BIT(MDO_AGENT_RUN_PREPARE) | MDO_AGENT_PHASE_BIT(MDO_AGENT_BEFORE_REQUEST) |
         MDO_AGENT_PHASE_BIT(MDO_AGENT_BEFORE_TOOL) | MDO_AGENT_PHASE_BIT(MDO_AGENT_BEFORE_DELEGATE);
     L.OnEvent = MhPolicy;
     return R->AddLifecycle(R->Context, &L, Error, Capacity);

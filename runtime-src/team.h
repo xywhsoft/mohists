@@ -8,6 +8,7 @@ static int MhRole(const char* S) {
     for (int I = 0; I < 3; ++I) if (S && !strcmp(S, MhRoles[I])) return I;
     return -1;
 }
+#include "settings.h"
 static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v1* E) {
     if (MhCoordinator(C, E)) return MDO_RESULT_ERROR;
     const char* Id = MhText(C, P, "id"), *Goal = MhText(C, P, "goal");
@@ -26,15 +27,17 @@ static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v
     if (Previous && !MhIs(C, Previous, "state", "completed") && !MhIs(C, Previous, "state", "cancelled")) {
         C->V->Release(Old); return MhError(E, "mohists_team_open", "Finish or stop the previous group before starting another", 409);
     }
-    xvalue* Team = C->V->Parse("{\"schema\":\"mohists.team.v1\",\"state\":\"active\",\"constraint_revision\":1,\"concurrency\":3,\"max_calls\":24,\"calls_used\":0,\"jobs\":[],\"active\":[],\"speaker\":\"coordinator\"}");
+    xvalue *DefaultsEnvelope = NULL, *Defaults = NULL;
+    Code = MhSettingsLoad(C,&DefaultsEnvelope,&Defaults,E); C->V->Release(DefaultsEnvelope);
+    if (!Code && MhIs(C,Defaults,"mode","requested") && mdoCallOrigin(C->S) != MDO_ORIGIN_USER)
+        Code = MhError(E,"mohists_requested_only","User selected requested collaboration; start a team explicitly from the collaboration window",403);
+    if (Code) { C->V->Release(Defaults); C->V->Release(Old); return Code; }
+    xvalue* Team = C->V->Parse("{\"schema\":\"mohists.team.v1\",\"state\":\"active\",\"constraint_revision\":1,\"calls_used\":0,\"jobs\":[],\"active\":[],\"speaker\":\"coordinator\"}");
+    const char* DefaultsKeys[] = {"mode","review","concurrency","max_calls","roles"};
+    for (int I = 0; I < 5; ++I) C->V->Set(Team,DefaultsKeys[I],C->V->Get(Defaults,DefaultsKeys[I]));
+    C->V->Release(Defaults);
     MhString(C, Team, "id", Id); MhString(C, Team, "goal", Goal);
     MhNumber(C, Team, "generation", MhUInt(C, Previous, "generation") + 1);
-    xvalue* Bindings = C->V->Object();
-    for (int I = 0; I < 3; ++I) {
-        xvalue* B = C->V->Object(); MhString(C, B, "agent_id", MhAgents[I]);
-        MhString(C, B, "model_id", ""); MhSet(C, Bindings, MhRoles[I], B);
-    }
-    MhSet(C, Team, "roles", Bindings);
     xvalue* Receipt = NULL; Code = MhSave(C, "team", MhUInt(C, Old, "revision"), Team, &Receipt, E);
     C->V->Release(Receipt); C->V->Release(Old);
     if (!Code) { *R = C->V->Clone(Team); MhEmit(C, "mohists.changed", Team); }
@@ -58,6 +61,12 @@ static mdo_result MhConfigure(MhContext* C, const xvalue* P, const xvalue* Envel
         return MhError(E, "mohists_conflict", "Read the current team revision before editing", 409);
     if (C->V->Count(C->V->Get(Team, "active")) || C->V->Count(C->V->Get(Team, "jobs")))
         return MhError(E, "mohists_team_busy", "Configure role bindings before submitting work", 409);
+    if (mdoCallOrigin(C->S) != MDO_ORIGIN_USER)
+        return MhError(E,"mohists_settings_user","Only the user can change budgets and role bindings",403);
+    if (C->V->Get(P,"review")) {
+        if (!MhChoice(C,P,"review","automatic","always","off")) return MhError(E,"mohists_arguments","Unknown review policy",400);
+        MhString(C,Team,"review",MhText(C,P,"review"));
+    }
     const xvalue* Roles = C->V->Get(P, "roles");
     if (Roles) {
         if (C->V->Kind(Roles) != MDO_VALUE_OBJECT) return MhError(E, "mohists_arguments", "roles must be an object", 400);
@@ -68,6 +77,7 @@ static mdo_result MhConfigure(MhContext* C, const xvalue* P, const xvalue* Envel
                 return MhError(E, "mohists_arguments", "Supply known role bindings with portable agent/model ids", 400);
             C->V->Set((xvalue*)C->V->Get(Team, "roles"), K, B);
         }
+        mdo_result Available=MhBindingsAvailable(C,Roles,E); if (Available) return Available;
     }
     const char* Numbers[] = {"concurrency", "max_calls"}; uint64_t Max[] = {3, 128};
     for (int I = 0; I < 2; ++I) if (C->V->Get(P, Numbers[I])) {

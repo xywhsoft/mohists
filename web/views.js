@@ -58,21 +58,52 @@ export function openAssignment(sdk, store, member) {
     } });
 }
 
-export function openTeamConfig(sdk, store) {
+async function catalogs(sdk, signal) {
+  const [agents, models] = await Promise.all([sdk.call("agents.list", {}, { signal }), sdk.call("models.list", {}, { signal })]);
+  return { agents: agents.data.items, models: models.data.models };
+}
+function configurationFields(root, settings, catalog, global) {
+  if (global) {
+    const mode = field(root, "何时分工", "select");
+    selectOptions(mode, [["automatic", "按需自动分工"], ["requested", "仅在我从协作窗口开始后分工"]], settings.mode);
+    root._mode = mode;
+  }
+  const review = field(root, "独立复核", "select");
+  selectOptions(review, [["automatic", "协调者按任务需要决定"], ["always", "执行任务完成后必须独立复核"], ["off", "不自动分派复核"]], settings.review || "automatic");
+  const cols = el("div", "mh-columns"); root.append(cols);
+  const concurrency = field(cols, "同时运行的成员", "number", settings.concurrency); concurrency.min = "1"; concurrency.max = "3";
+  const calls = field(cols, "累计成员轮次上限", "number", settings.max_calls); calls.min = "1"; calls.max = "128";
+  const roles = {};
+  for (const r of ["researcher", "worker", "reviewer"]) {
+    root.append(el("h4", "", roleName(r))); const group = el("div", "mh-columns"); root.append(group);
+    const agent = field(group, "Agent / SubAgent", "select");
+    const agents = catalog.agents.map(a => [a.id, `${a.name || a.id} · ${a.id}`]);
+    if (!agents.some(([a]) => a === settings.roles[r].agent_id)) agents.unshift([settings.roles[r].agent_id, `不可用 · ${settings.roles[r].agent_id}`]);
+    selectOptions(agent, agents, settings.roles[r].agent_id);
+    const model = field(group, "模型", "select"), models = [["", "沿用当前会话"], ...catalog.models.map(m => [m.id, m.name || m.id])];
+    if (settings.roles[r].model_id && !models.some(([m]) => m === settings.roles[r].model_id)) models.push([settings.roles[r].model_id, `不可用 · ${settings.roles[r].model_id}`]);
+    selectOptions(model, models, settings.roles[r].model_id); roles[r] = [agent, model];
+  }
+  return () => ({ ...(global ? { mode: root._mode.value } : {}), review: review.value,
+    concurrency: Number(concurrency.value), max_calls: Number(calls.value),
+    roles: Object.fromEntries(Object.entries(roles).map(([r, [a, m]]) => [r, { agent_id: a.value, model_id: m.value }])) });
+}
+export async function openDefaults(sdk, store, signal) {
+  const [current, catalog] = await Promise.all([sdk.call("mohists.settings", { action: "get" }, { signal }), catalogs(sdk, signal)]);
+  if (signal?.aborted) return;
+  return windowForm(sdk, { store, title: "墨者默认设置", render(root) {
+    const read = configurationFields(root, current.value, catalog, true);
+    root.append(el("p", "mh-form-hint", "此设备的所有项目共用。仅新协作读取这些默认值；已运行任务的角色、模型和累计预算保持原样。模型不能修改用户设置。"));
+    return read;
+  }, submit: settings => sdk.call("mohists.settings", { action: "save", expected_revision: current.revision, settings }) });
+}
+export async function openTeamConfig(sdk, store, signal) {
   const team = store.state.team, generation = team.generation, revision = team.revision;
+  const catalog = await catalogs(sdk, signal); if (signal?.aborted) return; groupChanged(store, generation);
   return windowForm(sdk, { store, title: "本次协作设置", render(root) {
-    const cols = el("div", "mh-columns"); root.append(cols);
-    const concurrency = field(cols, "同时运行的成员", "number", team.concurrency); concurrency.min = "1"; concurrency.max = "3";
-    const calls = field(cols, "累计成员轮次上限", "number", team.max_calls); calls.min = "1"; calls.max = "128";
-    const roles = {};
-    for (const r of ["researcher", "worker", "reviewer"]) {
-      root.append(el("h4", "", roleName(r))); const group = el("div", "mh-columns"); root.append(group);
-      const agent = field(group, "Agent / SubAgent 标识", "text", team.roles[r].agent_id); agent.required = true;
-      const model = field(group, "模型标识（留空沿用会话）", "text", team.roles[r].model_id); roles[r] = [agent, model];
-    }
+    const read = configurationFields(root, team, catalog, false);
     root.append(el("p", "mh-form-hint", "仅在分派任务前设置。已创建成员的角色和模型绑定保持固定；自定义研究和复核角色同样只读。"));
-    return () => ({ expected_revision: revision, concurrency: Number(concurrency.value), max_calls: Number(calls.value),
-      roles: Object.fromEntries(Object.entries(roles).map(([r, [a, m]]) => [r, { agent_id: a.value.trim(), model_id: m.value.trim() }])) });
+    return () => ({ expected_revision: revision, ...read() });
   }, async submit(params) { groupChanged(store, generation); await store.mutate("configure", params, generation); } });
 }
 
@@ -100,12 +131,12 @@ export function mountSummary(root, { sdk, store, openPanel }) {
   });
 }
 
-export function mountPanel(root, { sdk, store, openMember }) {
+export function mountPanel(root, { sdk, store, openMember, signal }) {
   root.classList.add("mh", "mh-panel"); let error = "";
   const perform = async fn => { try { error = ""; await fn(); } catch (e) { error = errorText(e); } render(store.state); };
   const render = ({ team, loading, busy, error: network, operationError }) => {
     root.replaceChildren(); const box = el("div", "mh-stack"); root.append(box);
-    const actions = el("div", "mh-line"); box.append(append(actions, el("h3", "mh-grow", "墨者协作"), button("刷新", () => perform(() => store.refresh(true)))));
+    const actions = el("div", "mh-line"); box.append(append(actions, el("h3", "mh-grow", "墨者协作"), button("默认设置", () => perform(() => openDefaults(sdk, store, signal))), button("刷新", () => perform(() => store.refresh(true)))));
     if (network || error) box.append(el("p", "mh-error", network ? errorText(network) : error));
     if (operationError) box.append(el("p", "mh-error", errorText(operationError)));
     if (loading) { box.append(el("p", "mh-empty", "正在读取…")); return; }
@@ -115,7 +146,7 @@ export function mountPanel(root, { sdk, store, openMember }) {
     const operations = el("div", "mh-line"); box.append(operations);
     if (team.state === "active") {
       operations.append(button("分派任务", () => openAssignment(sdk, store), "mh-primary"));
-      if (!team.jobs.length) operations.append(button("协作设置", () => openTeamConfig(sdk, store)));
+      if (!team.jobs.length) operations.append(button("协作设置", () => perform(() => openTeamConfig(sdk, store, signal))));
       if (team.assignment_items.some(j => j.state === "queued")) operations.append(button("运行排队任务", () => perform(() => store.mutate("run"))));
       operations.append(button("停止全部", () => perform(() => store.mutate("stop", { expected_revision: team.revision })), "mh-danger"));
       if (!team.active.length) operations.append(button("结束协作", () => perform(() => store.mutate("finish", { expected_revision: team.revision }))));
