@@ -22,7 +22,7 @@ static mdo_result MhMessages(MhContext* C, const xvalue* P, const char* Action,
             C->V->Release(Q); return MhError(E, "mohists_arguments", "Supply message_id and text of 1..4096 bytes", 400);
         }
         xvalue* Body = C->V->Object(); MhString(C, Body, "text", Text);
-        MhString(C, Body, "source", (C->S->MemberId && C->S->MemberId[0]) || (C->S->RunId && C->S->RunId[0]) ? "agent" : "user");
+        MhString(C, Body, "source", mdoCallOrigin(C->S) == MDO_ORIGIN_USER ? "user" : "agent");
         MhString(C, Body, "from", C->S->MemberId && C->S->MemberId[0] ? C->S->MemberId : "coordinator");
         MhSet(C, Q, "body", Body); MhString(C, Q, "message_id", Id);
     } else if (!strcmp(Action, "ack")) {
