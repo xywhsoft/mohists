@@ -1,6 +1,22 @@
 #ifndef MOHISTS_HANDOFF_H
 #define MOHISTS_HANDOFF_H
 
+static mdo_result MhExecutionTarget(void* User,const mdo_sdk_context_v1* S,const char* Topic,
+    const xvalue* Input,xvalue** Replacement,mdo_error_v1* E){
+    (void)User;(void)Topic;if(!S->SessionId||!S->SessionId[0])return MDO_RESULT_OK;
+    MhContext C;mdo_result Code=MhContextInit(&C,S,E);if(Code)return Code;
+    xvalue *TE=NULL,*Team=NULL;Code=MhTeamLoad(&C,&TE,&Team,E);
+    if(Code&&!strcmp(E->Code,"mohists_team_missing"))Code=MDO_RESULT_OK;
+    else if(!Code&&!MhIs(&C,Team,"speaker","coordinator")){
+        if(C.V->Get(Input,"target"))Code=MhError(E,"mohists_route_conflict","Another extension already selected the main speaker",409);
+        else{
+            *Replacement=C.V->Clone(Input);xvalue* Target=MhParams(&C,C.Group);
+            MhString(&C,Target,"id",MhText(&C,Team,"speaker"));MhSet(&C,*Replacement,"target",Target);
+        }
+    }
+    C.V->Release(TE);C.V->Release(Team);return Code;
+}
+
 /* The selected speaker is session state, never the configured/global Agent.
  * A main turn enters the same work/slot/budget admission as delegated work. */
 static bool MhTalkId(const char* Run, char Id[49]) {

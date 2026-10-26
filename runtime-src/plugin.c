@@ -122,6 +122,9 @@ static mdo_result Register(const mdo_host_services_v1* H,
     T.Effects = MDO_TOOL_EFFECT_READ; T.PermissionResource = NULL;
     if (R->AddTool(R->Context, &T, Error, Capacity)) return MDO_RESULT_ERROR;
     mdo_hook_v1 Hook = {sizeof(Hook), 1, "mohists.route", "run.route", 0, true, NULL, MhRoute};
+    Hook.Id="mohists.execution";Hook.Topic="session.execution";Hook.Execute=MhExecutionTarget;
+    if (R->AddHook(R->Context, &Hook, Error, Capacity)) return MDO_RESULT_ERROR;
+    Hook.Id="mohists.route";Hook.Topic="run.route";Hook.Execute=MhRoute;
     if (R->AddHook(R->Context, &Hook, Error, Capacity)) return MDO_RESULT_ERROR;
     Hook.Id = "mohists.finished"; Hook.Topic = "run.finished"; Hook.Transform = false; Hook.Execute = MhRouteFinished;
     if (R->AddHook(R->Context, &Hook, Error, Capacity)) return MDO_RESULT_ERROR;
