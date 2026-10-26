@@ -68,6 +68,7 @@ static mdo_result MhFinish(MhContext* C, const char* Id, const xvalue* Outcome,
 static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     xvalue* Team, xvalue** R, mdo_error_v1* E) {
     if (MhCoordinator(C, E)) return MDO_RESULT_ERROR;
+    bool Resume = MhIs(C, P, "action", "resume");
     if (!MhIs(C, Team, "state", "active")) return MhError(E, "mohists_team_ended", "This team no longer accepts execution", 409);
     const char* Id = MhText(C, P, "id"); xvalue *JE = NULL, *Job = NULL;
     mdo_result Code = MhJob(C, Id, &JE, &Job, E); if (Code) goto done;
@@ -75,8 +76,11 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
         MhUInt(C, Job, "constraint_revision") != MhUInt(C, Team, "constraint_revision")) {
         Code = MhError(E, "mohists_stale_task", "The task predates the current goal or constraints", 409); goto done;
     }
-    if (!MhIs(C, Job, "state", "queued")) {
+    if (!MhIs(C, Job, "state", Resume ? "requires_review" : "queued")) {
         Code = MhError(E, "mohists_task_admitted", "Task already started or ended; inspect its result or recovery state", 409); goto done;
+    }
+    if (Resume && MhUInt(C, P, "expected_revision") != MhUInt(C, JE, "revision")) {
+        Code = MhError(E, "mohists_conflict", "Inspect the interrupted task's current revision before resuming", 409); goto done;
     }
     if (MhUInt(C, Team, "calls_used") >= MhUInt(C, Team, "max_calls")) {
         Code = MhError(E, "mohists_budget", "The cumulative member-turn budget is exhausted", 429); goto done;
@@ -95,11 +99,13 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     xvalue *Q = MhParams(C, C->Group), *Work = NULL, *Member = NULL;
     MhString(C, Q, "id", Id); Code = MhCall(C, "work.get", Q, &Work, E);
     bool Ready = false; if (!Code) C->V->Boolean(C->V->Get(Work, "ready"), &Ready);
-    if (!Code && !Ready) Code = MhError(E, "mohists_dependencies", "Dependencies are unfinished, failed or cancelled", 409);
+    if (!Code && !Ready && !(Resume && MhIs(C, Work, "state", "claimed"))) Code = MhError(E, "mohists_dependencies", "Dependencies are unfinished, failed or cancelled", 409);
     if (Code) { C->V->Release(Work); goto done; }
     Q = MhParams(C, C->Group); MhString(C, Q, "id", MhText(C, Job, "member"));
     Code = MhCall(C, "instance.get", Q, &Member, E);
-    if (!Code && !MhIs(C, Member, "state", "idle")) Code = MhError(E, "mohists_member_busy", "Member is active or requires explicit recovery", 409);
+    if (!Code && !MhIs(C, Member, "state", Resume ? "requires_review" : "idle")) Code = MhError(E, "mohists_member_busy", "Member is active or requires a different recovery decision", 409);
+    if (!Code && Resume && MhUInt(C, P, "expected_member_revision") != MhUInt(C, Member, "revision"))
+        Code = MhError(E, "mohists_conflict", "Recovery requires the current native member revision", 409);
     C->V->Release(Member);
     if (Code) { C->V->Release(Work); goto done; }
     char Prompt[10000], Message[80];
@@ -127,7 +133,7 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
         C->V->Release(Receipt); Receipt = NULL; C->V->Release(Latest);
     }
     C->V->Release(Work);
-    if (!Code) {
+    if (!Code && !Resume) {
         Q = MhParams(C, C->Group); MhString(C, Q, "id", MhText(C, Job, "member"));
         MhString(C, Q, "message_id", Message); MhString(C, Q, "prompt", Prompt);
         Code = MhCall(C, "instance.send", Q, &Receipt, E); C->V->Release(Receipt); Receipt = NULL;
@@ -135,7 +141,12 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     if (!Code) {
         MhEmit(C, "mohists.changed", Job);
         Q = MhParams(C, C->Group); MhString(C, Q, "id", MhText(C, Job, "member"));
-        Code = MhCall(C, "instance.step", Q, &Receipt, E);
+        if (Resume) {
+            MhString(C, Q, "message_id", Message);
+            MhNumber(C, Q, "expected_revision", MhUInt(C, P, "expected_member_revision"));
+            if (C->V->Get(P, "decisions")) C->V->Set(Q, "decisions", C->V->Get(P, "decisions"));
+        }
+        Code = MhCall(C, Resume ? "instance.resume" : "instance.step", Q, &Receipt, E);
     }
     if (Code) {
         mdo_error_v1 Original = *E, FinishError = {0}; xvalue* Final = NULL;
@@ -152,8 +163,13 @@ static mdo_result MhResult(MhContext* C, const xvalue* P, const xvalue* Team,
         Code = MhError(E, "mohists_stale_task", "Select a task from the current group", 409);
     if (!Code) {
         *R = C->V->Clone(Job);
+        MhNumber(C, *R, "revision", MhUInt(C, JE, "revision"));
+        xvalue* Member = NULL, *Q = MhParams(C, C->Group);
+        MhString(C, Q, "id", MhText(C, Job, "member"));
+        Code = MhCall(C, "instance.get", Q, &Member, E);
+        if (!Code) C->V->Set(*R, "member_state", Member); C->V->Release(Member);
         const char* Message = MhText(C, Job, "message_id");
-        if (Message && Message[0]) {
+        if (!Code && Message && Message[0]) {
             xvalue* Q = MhParams(C, C->Group), *Native = NULL;
             MhString(C, Q, "id", MhText(C, Job, "member")); MhString(C, Q, "message_id", Message);
             Code = MhCall(C, "instance.result", Q, &Native, E);

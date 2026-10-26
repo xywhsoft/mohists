@@ -9,6 +9,7 @@
 #include "messages.h"
 #include "control.h"
 #include "policy.h"
+#include "recovery.h"
 
 static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     const xvalue* P, xvalue** R, mdo_error_v1* E) {
@@ -23,6 +24,11 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     } else if (!strcmp(Action, "configure")) Code = MhConfigure(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "assign")) Code = MhAssign(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "execute")) Code = MhExecute(&C, P, Envelope, Team, R, E);
+    else if (!strcmp(Action, "refresh")) Code = MhRefresh(&C, Team, R, E);
+    else if (!strcmp(Action, "resume") || !strcmp(Action, "abandon")) {
+        if (S->RunId && S->RunId[0]) Code = MhError(E, "mohists_recovery_user", "Recovery requires an explicit user decision", 403);
+        else Code = !strcmp(Action, "resume") ? MhExecute(&C, P, Envelope, Team, R, E) : MhAbandon(&C, P, R, E);
+    }
     else if (!strcmp(Action, "result")) Code = MhResult(&C, P, Team, R, E);
     else if (!strcmp(Action, "message") || !strcmp(Action, "inbox") || !strcmp(Action, "ack")) Code = MhMessages(&C, P, Action, R, E);
     else if (!strcmp(Action, "cancel") || !strcmp(Action, "stop") || !strcmp(Action, "revise") || !strcmp(Action, "finish"))
@@ -39,8 +45,9 @@ static mdo_result Tool(void* User, const mdo_tool_context_v1* T,
     const mdo_values_v1* V = S->Api->Values; xvalue *P = V->Parse(Arguments), *R = NULL;
     mdo_error_v1 E = {0}; const char* Action = V->Text(V->Get(P, "action"));
     bool Mail = User != NULL;
-    bool Allowed = !Mail || (Action && (!strcmp(Action, "get") || !strcmp(Action, "result") ||
-        !strcmp(Action, "inbox") || !strcmp(Action, "message") || !strcmp(Action, "ack")));
+    bool Recovery = Action && (!strcmp(Action, "resume") || !strcmp(Action, "abandon"));
+    bool Allowed = !Recovery && (!Mail || (Action && (!strcmp(Action, "get") || !strcmp(Action, "result") ||
+        !strcmp(Action, "inbox") || !strcmp(Action, "message") || !strcmp(Action, "ack"))));
     mdo_result Code = Allowed ? TeamCall(NULL, S, P, &R, &E) :
         MhError(&E, "mohists_action", "Use the team tool for coordinator actions", 403);
     if (Code) {
