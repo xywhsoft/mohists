@@ -1,4 +1,4 @@
-"""Run one reusable mdo development instance without copying its SDK or app."""
+"""Run one project deployment with the existing shared mdo native host."""
 from __future__ import annotations
 
 import argparse
@@ -109,12 +109,23 @@ def start():
             raise RuntimeError((RUNTIME / "host.log").read_text(encoding="utf-8", errors="replace")[-6000:])
         try:
             if request("GET", "/api/v1/bootstrap", timeout=1)[0] == 200:
+                ensure_project()
                 print(f"mdo ready: http://127.0.0.1:{env['port']} (PID {child.pid})")
                 return
         except (OSError, http.client.HTTPException):
             pass
         time.sleep(.25)
     raise RuntimeError("Host startup timed out; inspect runtime/host.log")
+
+
+def ensure_project():
+    projects = call("project.list")["data"]["items"]
+    project = next((p for p in projects if p["id"] == "mohists"), None)
+    if project is None:
+        call("project.create", {"body": {"id": "mohists", "name": "墨者 · Mohists", "workspace_root": str(ROOT)}})
+        project = call("project.get", {"path": {"project": "mohists"}})["data"]
+    if Path(project["workspace_root"]).resolve() != ROOT:
+        raise RuntimeError("Existing Mohists project points elsewhere; its binding was preserved")
 
 
 def stop():
