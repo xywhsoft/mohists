@@ -1,5 +1,4 @@
 """Compose the real remote HTTP protocol, SDK and plugin in the single Home."""
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from dev import ROOT, call
 from model_fixture import LocalModel
 
-node = shutil.which("node") or str(Path(os.environ["USERPROFILE"]) /
+node = shutil.which("node") or str(Path.home() /
     ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe")
 with LocalModel() as model:
     model.configure(call)
