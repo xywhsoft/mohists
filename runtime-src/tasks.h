@@ -18,10 +18,25 @@ static mdo_result MhEnsureAssignment(MhContext* C, const xvalue* Job, xvalue** R
     mdo_result Code = MhCall(C, "work.create", Q, &Created, E); C->V->Release(Created);
     if (Code) return Code;
     Q = MhParams(C, C->Group); MhString(C, Q, "id", MhText(C, Job, "member"));
-    MhString(C, Q, "agent_id", MhText(C, Job, "agent_id"));
-    const char* Model = MhText(C, Job, "model_id"); if (Model && Model[0]) MhString(C, Q, "model_id", Model);
-    MhString(C, Q, "permission_profile", MhIs(C, Job, "role", "worker") ? "balanced" : "read-only");
-    Code = MhCall(C, "instance.create", Q, &Created, E); C->V->Release(Created);
+    Code = MhCall(C, "instance.get", Q, &Created, E);
+    const char* Model = MhText(C, Job, "model_id");
+    const char* Permission = MhIs(C, Job, "role", "worker") ? "balanced" : "read-only";
+    if (!Code) {
+        /* User windows and the coordinator have different extension identities.
+         * Reuse their common session-owned member without changing its owner. */
+        if (!MhIs(C, Created, "agent_id", MhText(C, Job, "agent_id")) ||
+            !MhIs(C, Created, "model_id", Model ? Model : "") ||
+            !MhIs(C, Created, "permission_profile", Permission) ||
+            !MhIs(C, Created, "parent_session", C->S->SessionId))
+            Code = MhError(E, "mohists_member_binding", "Existing member has a different immutable role or model binding", 409);
+    } else if (E->Status == 404) {
+        Q = MhParams(C, C->Group); MhString(C, Q, "id", MhText(C, Job, "member"));
+        MhString(C, Q, "agent_id", MhText(C, Job, "agent_id"));
+        if (Model && Model[0]) MhString(C, Q, "model_id", Model);
+        MhString(C, Q, "permission_profile", Permission);
+        Code = MhCall(C, "instance.create", Q, &Created, E);
+    }
+    C->V->Release(Created);
     if (!Code) { *R = C->V->Clone(Job); MhEmit(C, "mohists.changed", Job); } return Code;
 }
 static mdo_result MhAssignments(MhContext* C, const xvalue* Team, xvalue** R, mdo_error_v1* E) {

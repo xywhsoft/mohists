@@ -21,7 +21,8 @@ def main():
         team("configure", expected_revision=snap["revision"], roles=roles, max_calls=2)
         assignment = team("assign", id="inspect", member="reader", role="researcher", title="Inspect", prompt="Remember marker-FIRST")
         assert assignment["model_id"] == "mohists-local", "Default binding must inherit the owning conversation model"
-        team("assign", id="followup", member="reader", role="researcher", title="Follow up", prompt="Then marker-SECOND", depends_on=["inspect"])
+        call("mohists.team", {"action": "assign", "id": "followup", "member": "reader", "role": "researcher", "title": "Follow up",
+            "prompt": "Then marker-SECOND", "depends_on": ["inspect"]}, context={**ctx, "extension": "plugin.mohists"})
         team("assign", id="review", member="reviewer", role="reviewer", title="Review", prompt="Independent check", depends_on=["followup"])
         assert not model.server.requests, "Admission and listing must not call models"
         team("execute", id="followup", status=409)
