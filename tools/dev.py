@@ -165,11 +165,11 @@ def stop():
 
 
 def install():
-    manifest = read_json(ROOT / "plugin.json")
-    files = [{"path": path.relative_to(ROOT).as_posix(), "text": path.read_text(encoding="utf-8")}
-        for directory in ("runtime-src", "roles", "web")
-        for path in sorted((ROOT / directory).rglob("*")) if path.is_file()]
-    applied = call("plugin.apply", {"id": manifest["id"], "manifest": manifest, "files": files})
+    from package import payload
+    source = payload()
+    manifest = source["manifest"]
+    installed = next((p for p in call("plugin.list")["items"] if p["id"] == manifest["id"]), None)
+    applied = call("plugin.apply", {**source, "expected_revision": installed["revision"] if installed else ""})
     if any(p["id"] == manifest["id"] and p["enabled"] for p in applied["items"]):
         print(json.dumps({k: applied.get(k) for k in ("pending", "restart_required", "recovery_mode")}))
         return
