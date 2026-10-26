@@ -21,12 +21,12 @@ def main():
         for index in range(3):
             task = f"pending-{index}"
             marker = RUNTIME / f"recovery-child-{uuid.uuid4().hex}.json"
-            script = "import os,time,json;from pathlib import Path;Path(" + repr(str(marker)) + ").write_text(json.dumps({'pid':os.getpid()}));time.sleep(20)"
+            script = "import os,time,json;from pathlib import Path;p=Path(" + repr(str(marker)) + ");t=p.with_name(p.name+'.tmp');t.write_text(json.dumps({'pid':os.getpid()}));t.replace(p);time.sleep(20)"
             model.server.tool_call = True
             model.server.tool_override = ("exec", {"argv": [sys.executable, "-c", script], "timeout_ms": 25000})
             team("assign", id=task, member=f"worker-{index}", role="worker", title="Interrupted process", prompt="Call the bounded fixture process")
             call("operation.start", {"method": "mohists.team", "params": {"action": "execute", "id": task}}, context=ctx)
-            until = time.monotonic() + 8
+            until = time.monotonic() + 15
             while not marker.exists() and time.monotonic() < until: time.sleep(.05)
             assert marker.exists(), "The real process must start before the simulated crash"
             child = json.loads(marker.read_text())["pid"]

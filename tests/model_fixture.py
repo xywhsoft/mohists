@@ -23,6 +23,14 @@ class Model(BaseHTTPRequestHandler):
             delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "mohists-history-tool", "type": "function",
                 "function": {"name": name, "arguments": json.dumps(args)}}]}
             finish = "tool_calls"
+        if self.server.respond is not None:
+            try:
+                delta = self.server.respond(value)
+                finish = "tool_calls" if delta.get("tool_calls") else "stop"
+            except Exception as error:
+                self.server.script_errors.append(f"{type(error).__name__}: {error}")
+                self.send_error(500, "Local fixture script rejected the request")
+                return
         chunks = [
             {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": delta}]},
             {"id": "mohists-test", "model": "mohists-local", "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
@@ -46,6 +54,8 @@ class LocalModel:
         self.server.reasoning = None
         self.server.tool_call = False
         self.server.tool_override = None
+        self.server.respond = None
+        self.server.script_errors = []
         self.server.entered = threading.Event()
         self.server.release = threading.Event()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
