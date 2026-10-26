@@ -3,6 +3,7 @@
 
 static const char* MhRoles[] = {"researcher", "worker", "reviewer"};
 static mdo_result MhAssignments(MhContext*, const xvalue*, xvalue**, mdo_error_v1*);
+static mdo_result MhPendingReview(MhContext*,const xvalue*,const char*,bool,mdo_error_v1*);
 static const char* MhAgents[] = {"subagent.mohists-researcher", "subagent.mohists-worker", "subagent.mohists-reviewer"};
 static int MhRole(const char* S) {
     for (int I = 0; I < 3; ++I) if (S && !strcmp(S, MhRoles[I])) return I;
@@ -26,6 +27,11 @@ static mdo_result MhStart(MhContext* C, const xvalue* P, xvalue** R, mdo_error_v
     }
     if (Previous && !MhIs(C, Previous, "state", "completed") && !MhIs(C, Previous, "state", "cancelled")) {
         C->V->Release(Old); return MhError(E, "mohists_team_open", "Finish or stop the previous group before starting another", 409);
+    }
+    if(Previous){
+        MhContext Prior=*C;Prior.Generation=MhUInt(C,Previous,"generation");
+        snprintf(Prior.Group,sizeof(Prior.Group),"%s.g%llu",Prior.Root,(unsigned long long)Prior.Generation);
+        Code=MhPendingReview(&Prior,Previous,NULL,false,E);if(Code){C->V->Release(Old);return Code;}
     }
     xvalue *DefaultsEnvelope = NULL, *Defaults = NULL;
     Code = MhSettingsLoad(C,&DefaultsEnvelope,&Defaults,E); C->V->Release(DefaultsEnvelope);

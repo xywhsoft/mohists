@@ -8,17 +8,20 @@ static mdo_result MhPolicy(void* User, mdo_agent_phase Phase,
     (void)User;
     bool Member = A->Namespace && !strncmp(A->Namespace, "mohists.", 8) && A->MemberId && A->MemberId[0];
     bool Coordinator = A->AgentId && !strcmp(A->AgentId, "agent.mohists");
-    if ((!Member && !Coordinator) || !A->Application) return MDO_RESULT_OK;
-    if (Phase == MDO_AGENT_BEFORE_DELEGATE) {
-        snprintf(Error, Capacity, "Use the Mohists team tool; recursive or unbudgeted delegation is disabled");
-        return MDO_RESULT_ERROR;
-    }
+    if ((!Member && A->MemberId && A->MemberId[0]) || !A->Application) return MDO_RESULT_OK;
+    if(!Member&&!Coordinator&&(!A->SessionId||!A->SessionId[0]))return MDO_RESULT_OK;
     MhContext C; mdo_error_v1 E = {0};
     mdo_result Code = MhContextInit(&C, A->Application, &E);
     xvalue *Envelope = NULL, *Team = NULL;
     if (!Code) Code = MhTeamLoad(&C, &Envelope, &Team, &E);
-    if (Code && !Member && !strcmp(E.Code, "mohists_team_missing")) Code = MDO_RESULT_OK;
-    else if (!Code && Member) {
+    if (Code && !Member && !strcmp(E.Code, "mohists_team_missing")) {
+        Code = MDO_RESULT_OK;if(!Coordinator){C.V->Release(Envelope);C.V->Release(Team);return Code;}
+    }
+    else if(!Code&&!Member){
+        if(!Coordinator&&!MhIs(&C,Team,"state","active")){C.V->Release(Envelope);C.V->Release(Team);return MDO_RESULT_OK;}
+        Coordinator=true;
+    }
+    if (!Code && Member) {
         bool Allowed = false; const xvalue* Active = C.V->Get(Team, "active");
         for (size_t I = 0; I < C.V->Count(Active); ++I) {
             xvalue *JE = NULL, *Job = NULL;
@@ -39,8 +42,9 @@ static mdo_result MhPolicy(void* User, mdo_agent_phase Phase,
         xwork_agent_extension_context* Native = mdoAgentNative(A);
         const xwork_hook_event* Event = Native ? Native->pToolEvent : NULL;
         if (Event && (Event->uEffects & (MDO_TOOL_EFFECT_WORKSPACE_WRITE | MDO_TOOL_EFFECT_PROCESS))) {
+            Code=MhPendingReview(&C,Team,NULL,true,&E);
             const xvalue* Active = C.V->Get(Team, "active");
-            for (size_t I = 0; I < C.V->Count(Active); ++I) {
+            for (size_t I = 0; !Code && I < C.V->Count(Active); ++I) {
                 xvalue *JE = NULL, *Job = NULL;
                 Code = MhJob(&C, C.V->Text(C.V->At(Active, I)), &JE, &Job, &E);
                 bool Writer = !Code && MhIs(&C, Job, "role", "worker"); C.V->Release(JE); C.V->Release(Job);
@@ -49,6 +53,8 @@ static mdo_result MhPolicy(void* User, mdo_agent_phase Phase,
             }
         }
     }
+    if(!Code&&Phase==MDO_AGENT_BEFORE_DELEGATE)
+        Code=MhError(&E,"mohists_delegation","Use the Mohists team tool; recursive or unbudgeted delegation is disabled",403);
     if (!Code && Coordinator && Phase == MDO_AGENT_CONTEXT) {
         xvalue *DE=NULL,*Defaults=NULL;
         const xvalue* Config=Team;

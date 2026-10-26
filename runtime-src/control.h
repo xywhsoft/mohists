@@ -6,6 +6,18 @@ static bool MhTerminal(const MhContext* C, const xvalue* Job) {
     for (int I = 0; I < 6; ++I) if (MhIs(C, Job, "state", States[I])) return true;
     return false;
 }
+static mdo_result MhPendingReview(MhContext* C,const xvalue* Team,const char* Except,bool WritersOnly,mdo_error_v1* E){
+    const xvalue* Jobs=C->V->Get(Team,"jobs");
+    for(size_t I=0;I<C->V->Count(Jobs);I++){
+        const char* Id=C->V->Text(C->V->At(Jobs,I));if(Except&&!strcmp(Id,Except))continue;
+        xvalue *JE=NULL,*Job=NULL;mdo_result Code=MhJob(C,Id,&JE,&Job,E);
+        bool Pending=!Code&&MhIs(C,Job,"state","requires_review")&&(!WritersOnly||MhIs(C,Job,"role","worker"));
+        C->V->Release(JE);C->V->Release(Job);if(Code)return Code;
+        if(Pending)return MhError(E,WritersOnly?"mohists_unresolved_writer":"mohists_review_pending",
+            WritersOnly?"Resolve the interrupted writer before starting another write; its effects are still uncertain":"Resolve interrupted member turns before ending or replacing this group",409);
+    }
+    return MDO_RESULT_OK;
+}
 static mdo_result MhReviewComplete(MhContext* C, const xvalue* Team, mdo_error_v1* E) {
     if (!MhIs(C,Team,"review","always")) return MDO_RESULT_OK;
     const xvalue* Jobs=C->V->Get(Team,"jobs");
@@ -86,7 +98,7 @@ static mdo_result MhControl(MhContext* C, const xvalue* P, const char* Action,
     }
     if (Finish && C->V->Count(C->V->Get(Team, "active")))
         return MhError(E, "mohists_team_busy", "Finish only after all active member turns have drained", 409);
-    if (Finish) { mdo_result Review=MhReviewComplete(C,Team,E); if (Review) return Review; }
+    if (Finish) { mdo_result Review=MhPendingReview(C,Team,NULL,false,E);if(!Review)Review=MhReviewComplete(C,Team,E); if (Review) return Review; }
     const char* Goal = MhText(C, P, "goal");
     if (Revise && (!Goal || !Goal[0] || strlen(Goal) > 4096))
         return MhError(E, "mohists_arguments", "A revised goal of 1..4096 bytes is required", 400);

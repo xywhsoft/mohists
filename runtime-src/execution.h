@@ -20,8 +20,10 @@ static mdo_result MhFinish(MhContext* C, const char* Id, const xvalue* Outcome,
                 MhUInt(C, Team, "constraint_revision") != MhUInt(C, Job, "constraint_revision");
             const char* State = MhText(C, Outcome, "outcome");
             if (!State || Uncertain) State = "requires_review";
-            if (MhIs(C, Job, "state", "cancelling")) State = MhIs(C, Job, "cancel_reason", "constraints_changed") ? "stale" : "cancelled";
-            else if (Stale) State = "stale";
+            if (strcmp(State,"requires_review")) {
+                if (MhIs(C, Job, "state", "cancelling")) State = MhIs(C, Job, "cancel_reason", "constraints_changed") ? "stale" : "cancelled";
+                else if (Stale && strcmp(State,"cancelled")) State = "stale";
+            }
             MhString(C, Job, "state", State); MhString(C, Job, "outcome", MhText(C, Outcome, "outcome"));
             const char* Error = MhText(C, Outcome, "error");
             if (Error && strlen(Error) <= 512) MhString(C, Job, "error", Error);
@@ -108,6 +110,7 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     if (!Reserved && MhUInt(C, Team, "calls_used") >= MhUInt(C, Team, "max_calls")) {
         Code = MhError(E, "mohists_budget", "The cumulative member-turn budget is exhausted", 429); goto done;
     }
+    if(MhIs(C,Job,"role","worker")){Code=MhPendingReview(C,Team,Id,true,E);if(Code)goto done;}
     const xvalue* Active = C->V->Get(Team, "active");
     if (!Reserved && C->V->Count(Active) >= MhUInt(C, Team, "concurrency")) {
         Code = MhError(E, "mohists_concurrency", "All member slots are occupied", 429); goto done;

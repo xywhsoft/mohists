@@ -41,6 +41,7 @@ def main():
         assert drained(op)["state"] == "cancelled"
         final = team("get")
         assert final["active"] == [] and final["state"] == "cancelled", final
+        assert all(m["state"] == "idle" for m in final["members"]), "Stopping a pure model turn must not strand the member in recovery"
         assert team("result", id="second-writer")["state"] == "cancelled"
         assign_args = dict(id="late", member="late", role="worker", title="late", prompt="Must not run")
         assert team("assign", status=409, **assign_args)["code"] == "mohists_team_ended"
