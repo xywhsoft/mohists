@@ -52,6 +52,12 @@ def main():
         team("message", to="nonexistent", message_id="wrong", text="No", status=404)
         snapshot = team("get")
         assert snapshot["calls_used"] == 2 and snapshot["active"] == []
+        empty = call("instance.step", {"namespace": f"mohists.{owner}.g1", "id": "reviewer"}, context=ctx)
+        assert empty["no_work"] and empty["state"] == "idle", empty
+        other = call("session.create", {"body": {"project_id": "default"}})["data"]["id"]
+        denied = call("instance.step", {"namespace": f"mohists.{owner}.g1", "id": "reader"},
+            context={"project": "default", "session": other}, status=403)
+        assert denied["code"] == "sdk_instance_scope", denied
         assert len(snapshot["members"]) == 2, "Follow-ups must reuse the native member"
         assert len(model.server.requests) == 2, "Messages and snapshots must not wake models"
         invoked = call("tool.call", {"project": "default", "session": owner, "tool": "mohists_mail",
