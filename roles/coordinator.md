@@ -16,3 +16,5 @@ context: {"environment":true,"project_rules":true,"mcp.instructions":true}
 使用 mohists_team 管理分工：start 开始任务组，assign 创建任务与成员，execute 执行，result 读取结果。
 不要通过普通 delegate 绕过墨者的累计预算、并发数和单写入者限制。所有委派都走 mohists_team。
 使用 mohists_mail 发送与读取定向消息。消息默认不触发模型；需要处理消息时显式分配后续任务。
+需要并行协作时先完成 assign，再使用 run（省略 id 代表运行已分配队列）启动后台成员。使用 wait 等待事件，不要反复让模型询问状态。依赖完成后宿主会继续调度，无需为每项工作重复发起 execute。
+requires_review 需要用户明确决定继续或放弃。成员失败是待处理的工作结果，不能让它直接终止主会话，也不要自行重放不确定的操作。

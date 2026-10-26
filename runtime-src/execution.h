@@ -65,10 +65,23 @@ static mdo_result MhFinish(MhContext* C, const char* Id, const xvalue* Outcome,
     }
     return MhError(E, "mohists_busy", "Team changed repeatedly; reload before continuing", 409);
 }
+static mdo_result MhUnschedule(MhContext* C, const char* Id, xvalue** R, mdo_error_v1* E) {
+    xvalue *TE = NULL, *Team = NULL, *JE = NULL, *Job = NULL;
+    mdo_result Code = MhTeamLoad(C, &TE, &Team, E); if (!Code) Code = MhJob(C, Id, &JE, &Job, E);
+    if (!Code && MhIs(C, Job, "state", "starting") && MhIs(C, Team, "state", "active")) {
+        MhString(C, Job, "state", "queued"); MhString(C, Job, "operation_id", ""); MhString(C, Job, "message_id", "");
+        MhRemoveActive(C, Team, Id); uint64_t Used = MhUInt(C, Team, "calls_used");
+        if (Used) MhNumber(C, Team, "calls_used", Used - 1);
+        char Key[80]; MhJobKey(C, Id, Key); Code = MhSavePair(C, TE, Team, Key, JE, Job, R, E);
+    } else if (!Code) Code = MhError(E, "mohists_admission_changed", "Admission changed before rollback", 409);
+    C->V->Release(TE); C->V->Release(Team); C->V->Release(JE); C->V->Release(Job); return Code;
+}
 static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     xvalue* Team, xvalue** R, mdo_error_v1* E) {
     if (MhCoordinator(C, E)) return MDO_RESULT_ERROR;
     bool Resume = MhIs(C, P, "action", "resume");
+    bool Schedule = MhIs(C, P, "action", "schedule");
+    bool Reserved = MhIs(C, P, "action", "execute_reserved");
     if (!MhIs(C, Team, "state", "active")) return MhError(E, "mohists_team_ended", "This team no longer accepts execution", 409);
     const char* Id = MhText(C, P, "id"); xvalue *JE = NULL, *Job = NULL;
     mdo_result Code = MhJob(C, Id, &JE, &Job, E); if (Code) goto done;
@@ -76,20 +89,23 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
         MhUInt(C, Job, "constraint_revision") != MhUInt(C, Team, "constraint_revision")) {
         Code = MhError(E, "mohists_stale_task", "The task predates the current goal or constraints", 409); goto done;
     }
-    if (!MhIs(C, Job, "state", Resume ? "requires_review" : "queued")) {
+    if (Reserved && (!C->S->InvocationId || !MhIs(C, Job, "operation_id", C->S->InvocationId))) {
+        Code = MhError(E, "mohists_admission", "Execution must use its recorded native operation receipt", 403); goto done;
+    }
+    if (!MhIs(C, Job, "state", Resume ? "requires_review" : Reserved ? "starting" : "queued")) {
         Code = MhError(E, "mohists_task_admitted", "Task already started or ended; inspect its result or recovery state", 409); goto done;
     }
     if (Resume && MhUInt(C, P, "expected_revision") != MhUInt(C, JE, "revision")) {
         Code = MhError(E, "mohists_conflict", "Inspect the interrupted task's current revision before resuming", 409); goto done;
     }
-    if (MhUInt(C, Team, "calls_used") >= MhUInt(C, Team, "max_calls")) {
+    if (!Reserved && MhUInt(C, Team, "calls_used") >= MhUInt(C, Team, "max_calls")) {
         Code = MhError(E, "mohists_budget", "The cumulative member-turn budget is exhausted", 429); goto done;
     }
     const xvalue* Active = C->V->Get(Team, "active");
-    if (C->V->Count(Active) >= MhUInt(C, Team, "concurrency")) {
+    if (!Reserved && C->V->Count(Active) >= MhUInt(C, Team, "concurrency")) {
         Code = MhError(E, "mohists_concurrency", "All member slots are occupied", 429); goto done;
     }
-    for (size_t I = 0; I < C->V->Count(Active); ++I) {
+    for (size_t I = 0; !Reserved && I < C->V->Count(Active); ++I) {
         xvalue *AE = NULL, *A = NULL; Code = MhJob(C, C->V->Text(C->V->At(Active, I)), &AE, &A, E);
         bool Busy = !Code && (MhIs(C, A, "member", MhText(C, Job, "member")) ||
             (MhIs(C, A, "role", "worker") && MhIs(C, Job, "role", "worker")));
@@ -116,11 +132,34 @@ static mdo_result MhExecute(MhContext* C, const xvalue* P, const xvalue* TE,
     C->V->Free(Json); C->V->Release(Body);
     if (!Fits) { C->V->Release(Work); Code = MhError(E, "mohists_input_limit", "Combined goal and task exceed the native mailbox budget; shorten them or reference files", 413); goto done; }
     MhString(C, Job, "message_id", Message); MhString(C, Job, "state", "starting");
-    xvalue* Name = C->V->String(Id); C->V->Append((xvalue*)Active, Name); C->V->Release(Name);
-    MhNumber(C, Team, "calls_used", MhUInt(C, Team, "calls_used") + 1);
     char Key[80]; MhJobKey(C, Id, Key); xvalue* Receipt = NULL;
-    Code = MhSavePair(C, TE, Team, Key, JE, Job, &Receipt, E); C->V->Release(Receipt);
+    if (!Reserved) {
+        if (Schedule) {
+            unsigned char Bytes[16]; static const char Hex[] = "0123456789abcdef"; char Op[37] = "sdk-";
+            if (!xrtSecureRandom(Bytes, sizeof(Bytes))) { C->V->Release(Work); Code = MhError(E, "mohists_random", "Cannot create an operation identity", 503); goto done; }
+            for (int I = 0; I < 16; ++I) { Op[4+I*2] = Hex[Bytes[I] >> 4]; Op[5+I*2] = Hex[Bytes[I] & 15]; } Op[36] = 0;
+            MhString(C, Job, "operation_id", Op);
+        }
+        xvalue* Name = C->V->String(Id); C->V->Append((xvalue*)Active, Name); C->V->Release(Name);
+        MhNumber(C, Team, "calls_used", MhUInt(C, Team, "calls_used") + 1);
+        Code = MhSavePair(C, TE, Team, Key, JE, Job, &Receipt, E); C->V->Release(Receipt); Receipt = NULL;
+    }
     if (Code) { C->V->Release(Work); goto done; }
+    if (Schedule) {
+        C->V->Release(Work);
+        Q = C->V->Object(); MhString(C, Q, "id", MhText(C, Job, "operation_id")); MhString(C, Q, "method", "mohists.worker");
+        xvalue* Params = C->V->Object(); MhString(C, Params, "action", "execute_reserved"); MhString(C, Params, "id", Id);
+        MhSet(C, Q, "params", Params); Code = MhCall(C, "operation.start", Q, R, E);
+        if (Code) {
+            mdo_error_v1 Original = *E, X = {0}; xvalue* Final = NULL;
+            bool Rejected = Original.Status == 429 && !Original.MayHaveCompleted;
+            mdo_result RolledBack = Rejected ? MhUnschedule(C, Id, &Final, &X) : MDO_RESULT_ERROR;
+            C->V->Release(Final); Final = NULL;
+            if (RolledBack) MhFinish(C, Id, NULL, true, &Final, &X);
+            C->V->Release(Final); *E = Original;
+        }
+        goto done;
+    }
     Q = MhParams(C, C->Group); MhString(C, Q, "id", Id); MhString(C, Q, "worker", MhText(C, Job, "member"));
     MhString(C, Q, "claim_id", Id); MhNumber(C, Q, "expected_revision", MhUInt(C, Work, "revision"));
     C->V->Release(Work); Work = NULL; Code = MhCall(C, "work.claim", Q, &Work, E);

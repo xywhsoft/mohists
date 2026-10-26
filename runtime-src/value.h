@@ -69,6 +69,8 @@ static mdo_result MhTeamLoad(MhContext* C, xvalue** Envelope, xvalue** Team, mdo
     mdo_result Code = MhLoad(C, "team", Envelope, E); if (Code) return Code;
     const xvalue* V = C->V->Get(*Envelope, "value");
     if (!V) return MhError(E, "mohists_team_missing", "Start a collaboration group first", 404);
+    if (C->Generation && C->Generation != MhUInt(C, V, "generation"))
+        return MhError(E, "mohists_stale_group", "This callback belongs to a previous collaboration group", 409);
     *Team = C->V->Clone(V);
     C->Generation = MhUInt(C, V, "generation");
     snprintf(C->Group, sizeof(C->Group), "%s.g%llu", C->Root, (unsigned long long)MhUInt(C, V, "generation"));

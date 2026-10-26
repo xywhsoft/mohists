@@ -10,12 +10,15 @@
 #include "control.h"
 #include "policy.h"
 #include "recovery.h"
+#include "scheduler.h"
+#include "schemas.h"
 
 static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     const xvalue* P, xvalue** R, mdo_error_v1* E) {
-    (void)User; MhContext C; mdo_result Code = MhContextInit(&C, S, E); if (Code) return Code;
+    MhContext C; mdo_result Code = MhContextInit(&C, S, E); if (Code) return Code;
     const char* Action = MhText(&C, P, "action");
     if (!Action) return MhError(E, "mohists_arguments", "An action is required", 400);
+    if (User && strcmp(Action, "execute_reserved")) return MhError(E, "mohists_admission", "The worker service accepts only recorded admissions", 403);
     if (!strcmp(Action, "start")) return MhStart(&C, P, R, E);
     xvalue *Envelope = NULL, *Team = NULL;
     Code = MhTeamLoad(&C, &Envelope, &Team, E); if (Code) goto done;
@@ -24,6 +27,18 @@ static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     } else if (!strcmp(Action, "configure")) Code = MhConfigure(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "assign")) Code = MhAssign(&C, P, Envelope, Team, R, E);
     else if (!strcmp(Action, "execute")) Code = MhExecute(&C, P, Envelope, Team, R, E);
+    else if (!strcmp(Action, "execute_reserved")) {
+        Code = MhExecute(&C, P, Envelope, Team, R, E);
+        if (Code) {
+            xvalue *JE = NULL, *Job = NULL, *Final = NULL; mdo_error_v1 X = {0};
+            if (!MhJob(&C, MhText(&C, P, "id"), &JE, &Job, &X) && S->InvocationId && MhIs(&C, Job, "operation_id", S->InvocationId))
+                MhFinish(&C, MhText(&C, P, "id"), NULL, true, &Final, &X);
+            C.V->Release(JE); C.V->Release(Job); C.V->Release(Final);
+        }
+        xvalue* Next = NULL; mdo_error_v1 X = {0}; MhPump(&C, &Next, &X); C.V->Release(Next);
+    }
+    else if (!strcmp(Action, "run")) Code = MhRun(&C, P, Team, R, E);
+    else if (!strcmp(Action, "wait")) Code = MhWait(&C, P, R, E);
     else if (!strcmp(Action, "refresh")) Code = MhRefresh(&C, Team, R, E);
     else if (!strcmp(Action, "resume") || !strcmp(Action, "abandon")) {
         if (S->RunId && S->RunId[0]) Code = MhError(E, "mohists_recovery_user", "Recovery requires an explicit user decision", 403);
@@ -45,9 +60,8 @@ static mdo_result Tool(void* User, const mdo_tool_context_v1* T,
     const mdo_values_v1* V = S->Api->Values; xvalue *P = V->Parse(Arguments), *R = NULL;
     mdo_error_v1 E = {0}; const char* Action = V->Text(V->Get(P, "action"));
     bool Mail = User != NULL;
-    bool Recovery = Action && (!strcmp(Action, "resume") || !strcmp(Action, "abandon"));
-    bool Allowed = !Recovery && (!Mail || (Action && (!strcmp(Action, "get") || !strcmp(Action, "result") ||
-        !strcmp(Action, "inbox") || !strcmp(Action, "message") || !strcmp(Action, "ack"))));
+    bool Allowed = Mail ? (Action && (!strcmp(Action, "get") || !strcmp(Action, "result") ||
+        !strcmp(Action, "inbox") || !strcmp(Action, "message") || !strcmp(Action, "ack"))) : MhTeamToolAction(Action);
     mdo_result Code = Allowed ? TeamCall(NULL, S, P, &R, &E) :
         MhError(&E, "mohists_action", "Use the team tool for coordinator actions", 403);
     if (Code) {
@@ -76,10 +90,12 @@ static mdo_result Register(const mdo_host_services_v1* H,
     S.Id = "mohists.team"; S.Description = "Durable session-scoped collaboration";
     S.Execute = TeamCall;
     if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;
+    S.Id = "mohists.worker"; S.Description = "Execute one recorded background admission"; S.UserData = (void*)1;
+    if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;
     mdo_tool_v1 T = {0}; T.Size = sizeof(T); T.AbiVersion = 1;
     T.Id = "mohists_team"; T.Name = "墨者协作";
-    T.Description = "Coordinate only when needed. start(id,goal), then assign(id,member,role,title,prompt,depends_on?) with role researcher/worker/reviewer. execute(id) runs one bounded turn; reuse a member for follow-up tasks. get reads team/tasks/members. result(id) reads the native result and truncation flag. Respect budgets, dependencies, cancellation and user constraints. Do not use ordinary delegation to bypass team limits.";
-    T.ParametersJson = "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"enum\":[\"start\",\"get\",\"assign\",\"execute\",\"result\"]},\"id\":{\"type\":\"string\"},\"goal\":{\"type\":\"string\"},\"member\":{\"type\":\"string\"},\"role\":{\"type\":\"string\",\"enum\":[\"researcher\",\"worker\",\"reviewer\"]},\"title\":{\"type\":\"string\"},\"prompt\":{\"type\":\"string\"},\"depends_on\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"action\"]}";
+    T.Description = "Coordinate only when needed. start(id,goal), assign(id,member,role,title,prompt,depends_on?) with role researcher/worker/reviewer, run(id?) to queue one/all tasks in background, wait(timeout_ms) for event-driven results. execute(id) runs one foreground turn. Reuse members for follow-ups. get reads state/revision; result(id) reads native output and truncation flag; refresh reconciles interrupted outcomes without replay. cancel(id), stop/finish(expected_revision) control lifecycle. Model tools cannot raise user budgets, change bindings or make recovery decisions. Do not bypass team limits with ordinary delegation.";
+    T.ParametersJson = MhTeamSchema;
     T.Effects = MDO_TOOL_EFFECT_AGENT_DELEGATION; T.PermissionResource = "mohists";
     T.Flags = MDO_TOOL_PARALLEL_SAFE; T.MaxResultBytes = 49152; T.Execute = Tool;
     if (R->AddTool(R->Context, &T, Error, Capacity)) return MDO_RESULT_ERROR;
