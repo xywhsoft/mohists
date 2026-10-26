@@ -20,6 +20,13 @@ static mdo_result Drive(void* U,const mdo_agent_context_v1* F,char* Error,size_t
     if(!Code){Code=mdoCall(C,"operation.result",P,&R,&E);if(!Code)V->Set(Facts,"background",R);V->Release(R);R=NULL;}
     if(!Code){Code=mdoCall(C,"operation.release",P,&R,&E);V->Release(R);R=NULL;}
     V->Release(Op);V->Release(P);P=NULL;if(Code)goto done;
+    unsigned char Random[16];char Id[37]="cmd-";const char* Hex="0123456789abcdef";
+    if(!xrtSecureRandom(Random,sizeof(Random))){Code=MDO_RESULT_ERROR;goto done;}
+    for(size_t I=0;I<16;I++){Id[4+I*2]=Hex[Random[I]>>4];Id[5+I*2]=Hex[Random[I]&15];}Id[36]=0;
+    char* Request=xrtFormat("{\"body\":{\"invocation_id\":\"%s\",\"command_id\":\"mohists-origin\",\"raw_arguments\":\"\",\"session_id\":\"%s\"},\"query\":{\"project\":\"mohists\"}}",Id,C->SessionId);
+    P=V->Parse(Request);xrtFree(Request);Code=mdoCall(C,"product.command_invocations.post",P,&R,&E);V->Release(P);P=NULL;V->Release(R);R=NULL;
+    if(Code)goto done;
+    xvalue* CommandId=V->String(Id);V->Set(Facts,"command_id",CommandId);V->Release(CommandId);
     P=V->Parse("{\"namespace\":\"mohists-origin\",\"key\":\"facts\",\"expected_revision\":0}");V->Set(P,"value",Facts);
     xvalue* Namespace=V->String(C->SessionId);V->Set(P,"namespace",Namespace);V->Release(Namespace);
     Code=mdoCall(C,"state.compare_exchange",P,&R,&E);V->Release(P);P=NULL;V->Release(R);R=NULL;
