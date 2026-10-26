@@ -1,9 +1,11 @@
 """Real Mohists handoff uses native histories, admission and main Run streams."""
 import sys
 import time
+import json
+import http.client
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from dev import call, request, stop, start
+from dev import call, request, stop, start, environment
 from model_fixture import LocalModel
 
 
@@ -25,6 +27,16 @@ def main():
                 if value["terminal"]: return value
                 time.sleep(.04)
             raise AssertionError(value)
+        def mutate(id, action, body):
+            url = f"/api/v1/projects/mohists/sessions/{id}"
+            _, meta_headers, _ = request("GET", url)
+            _, gate, _ = request("GET", "/api/v1/bootstrap")
+            connection = http.client.HTTPConnection("127.0.0.1", environment()["port"], timeout=10)
+            try:
+                connection.request("POST", url + "/" + action, json.dumps(body) if body is not None else None,
+                    {"Content-Type": "application/json", "If-Match": meta_headers["etag"], "X-Mdo-Write-Token": gate["x-mdo-write-token"]})
+                response = connection.getresponse(); return response.status, json.loads(response.read())
+            finally: connection.close()
         team("start", id="handoff", goal="Preserve continuity and actual author provenance")
         team("configure", expected_revision=team("get")["revision"], max_calls=4, review="off")
         # A model-created assignment later run by the user remains agent text.
@@ -58,6 +70,16 @@ def main():
         assert "".join(e["text"] for e in events if e["kind"] == "model_text_delta") == model.server.reply
         assert all(e["source"]["member"] == "scholar" for e in events if e["kind"] == "model_text_delta")
         assert call("session.get", {"path": ctx}, context=ctx)["data"]["agent_id"] == "agent.mohists"
+        # Member sequence=1 is not coordinator sequence=1. Reject history
+        # rewrites before touching either ledger or publishing a fork.
+        event_path = f"/api/v1/projects/mohists/sessions/{owner}"
+        before_events = request("GET", event_path + "/events?after=0&limit=32")[2]
+        sessions_before = call("session.list", {"path": {"project": "mohists"}})
+        for action, body in (("truncate", {"through_sequence": 0}), ("clear", None), ("fork", {"through_sequence": 1})):
+            code, failure = mutate(owner, action, body)
+            assert code == 409 and failure["error"]["code"] == "session_member_history", (action, failure)
+        assert request("GET", event_path + "/events?after=0&limit=32")[2]["data"] == before_events["data"]
+        assert call("session.list", {"path": {"project": "mohists"}})["data"]["items"] == sessions_before["data"]["items"]
         # Selection is durable, but restarting never invokes the model itself.
         calls = len(model.server.requests); stop(); start()
         assert team("get")["speaker"] == "scholar" and len(model.server.requests) == calls
@@ -94,6 +116,14 @@ def main():
         history_tool = call("tool.call", {"tool": "mohists_team", "arguments": {"action": "history", "member": "scholar", "limit": 1}}, context=ctx)
         assert history_tool["success"] and '"items"' in history_tool["text"], history_tool
         assert team("finish", expected_revision=team("get")["revision"])["speaker"] == "coordinator"
+        plain = call("session.create", {"body": {"project_id": "mohists", "agent_id": "mdo.default", "model_id": "mohists-local"}})["data"]["id"]
+        plain_ctx = {**ctx, "session": plain}
+        ordinary = call("run.start", {"path": plain_ctx, "body": {"prompt": "Ordinary single-ledger history"}}, context=plain_ctx)["data"]
+        assert wait(ordinary["id"])["state"] == "succeeded"
+        status, fork = mutate(plain, "fork", {})
+        assert status == 201, fork
+        assert mutate(plain, "truncate", {"through_sequence": 0})[0] == 200
+        assert mutate(fork["data"]["id"], "clear", None)[0] == 200
     print("PASS real main-speaker handoff, long text, author provenance, restart, cancellation, budget and coordinator history reference")
 
 
