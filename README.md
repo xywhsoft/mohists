@@ -47,3 +47,5 @@ python tools/dev.py stop
 `python tools/test.py` 顺序运行全部 21 组回归，已经在同一个开发 Home 通过；本地事实报告位于 `runtime/acceptance/full-regression.json`。覆盖真实协调者工具调用、成员多轮、取消恢复、主讲交接、权限与预算、远程目标协议组合、状态容量及插件分发生命周期。浏览器另行验收桌面与窄屏布局。模型请求仅使用本机确定性夹具，不代表供应商、安卓真机或真实双机测试。
 
 含成员上下文的会话暂不支持完整便携迁移和多账本原子改写，宿主明确拒绝相应操作，避免静默丢失数据；完整边界见使用指南。本轮为本地功能交付，尚未发布兼容客户端到线上。
+
+Windows 单文件构建追加验收可运行 `python tests/test_packaged_host.py`，同样复用原 Home，结束后恢复开发宿主。正式验收状态记录在 `runtime/acceptance/formal-acceptance.json`：Windows 打包运行及桌面/窄屏界面通过；真实模型与双机由用户暂缓，安卓需重新构建匹配当前 SDK 的测试包并连接设备，不能将现有 0.6.0 APK 视为本轮兼容包。
