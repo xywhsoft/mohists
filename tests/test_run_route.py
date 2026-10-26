@@ -40,7 +40,17 @@ def main():
                 raise AssertionError(result)
             model.server.reply = "完整主讲回复🙂" * 1800
             prompt = "FIRST-main-input\n" + "长输入必须完整保留。" * 1600
+            call("state.put", {"namespace": native["namespace"], "key": "block_finish", "value": True, "expected_revision": 0}, context=ctx)
             active = run(prompt)
+            for _ in range(100):
+                notifications = call("events.read", {"topic": "qa.route.finishing"}, context=ctx)
+                if any(e["data"].get("run_id") == active["id"] for e in notifications["items"]): break
+                time.sleep(.03)
+            else: raise AssertionError("Completion hook was not reached")
+            assert call("instance.get", native, context=ctx)["state"] == "running", "Idle must not be exposed while the prior writer/owner is still held"
+            call("instance.send", {**native, "message_id": "after-release", "prompt": "Wait for native resources"}, context=ctx)
+            assert call("instance.step", native, context=ctx, status=409)["code"] == "sdk_instance_not_idle"
+            call("events.emit", {"topic": "qa.route.release", "data": {}}, context=ctx)
             result = wait(active["id"])
             assert result["state"] == "succeeded" and result["agent_id"] == "subagent.mohists-worker", result
             assert result["final_text"] == model.server.reply and not result["final_text_truncated"], result.keys()
@@ -60,6 +70,9 @@ def main():
             assert next(e["text"] for e in records if e["kind"] == "agent_start") == prompt
             outcome = call("instance.result", {**native, "message_id": active["id"]}, context=ctx)
             assert outcome["result"]["text_truncated"], "Main reply must not be copied from the short member receipt"
+            assert call("instance.step", native, context=ctx)["state"] == "idle"
+            control = call("state.get", {"namespace": native["namespace"], "key": "block_finish"}, context=ctx)
+            call("state.put", {"namespace": native["namespace"], "key": "block_finish", "value": False, "expected_revision": control["revision"]}, context=ctx)
             _, headers, _ = request("GET", "/api/v1/bootstrap")
             upload = http.client.HTTPConnection("127.0.0.1", environment()["port"], timeout=10)
             try:
@@ -106,7 +119,7 @@ def main():
             call("state.put", {"namespace": native["namespace"], "key": "off", "value": True, "expected_revision": 0}, context=ctx)
             direct = wait(run("THIRD-coordinator-input")["id"])
             assert direct["state"] == "succeeded" and direct["agent_id"] == "agent.mohists-route", direct
-            assert len(model.server.requests) == 8, "Only actual native requests, including a tool continuation and an explicit recovery"
+            assert len(model.server.requests) == 9, "Only actual native requests, including a tool continuation, explicit recovery and post-release turn"
     finally:
         module.unlink(missing_ok=True); role.unlink(missing_ok=True)
         stop(); start()

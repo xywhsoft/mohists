@@ -13,8 +13,20 @@ static mdo_result Route(void* U,const mdo_sdk_context_v1* C,const char* Topic,co
     Name=V->Clone(V->Get(Input,"run_id"));V->Set(Target,"message_id",Name);V->Release(Name);
     V->Set(*Replacement,"route",Target);V->Release(Target);return MDO_RESULT_OK;
 }
+static mdo_result Finishing(void* U,const mdo_sdk_context_v1* C,const char* Topic,const xvalue* Input,xvalue** Replacement,mdo_error_v1* E){
+    const mdo_values_v1* V=C->Api->Values;const char* Agent=V->Text(V->Get(Input,"agent_id"));if(!Agent||strcmp(Agent,"agent.mohists-route"))return MDO_RESULT_OK;
+    char Namespace[128];snprintf(Namespace,sizeof(Namespace),"route.%s",C->SessionId);
+    xvalue *P=V->Parse("{\"key\":\"block_finish\"}"),*R=NULL,*Name=V->String(Namespace);V->Set(P,"namespace",Name);V->Release(Name);
+    mdo_result Code=mdoCall(C,"state.get",P,&R,E);V->Release(P);bool Block=false;V->Boolean(V->Get(R,"value"),&Block);V->Release(R);R=NULL;if(Code||!Block)return Code;
+    Code=mdoCall(C,"events.read",NULL,&R,E);xvalue* Wait=V->Parse("{\"topic\":\"qa.route.release\",\"timeout_ms\":5000}");V->Set(Wait,"after",V->Get(R,"latest"));V->Release(R);R=NULL;
+    P=V->Parse("{\"topic\":\"qa.route.finishing\"}");xvalue* Data=V->Object();V->Set(Data,"run_id",V->Get(Input,"run_id"));V->Set(P,"data",Data);V->Release(Data);
+    if(!Code)Code=mdoCall(C,"events.emit",P,&R,E);V->Release(P);V->Release(R);R=NULL;
+    if(!Code)Code=mdoCall(C,"events.wait",Wait,&R,E);V->Release(Wait);V->Release(R);return Code;
+}
 static mdo_result Register(const mdo_host_services_v1* H,const mdo_registrar_v1* R,void** D,char* E,size_t N){
     mdo_hook_v1 Hook={sizeof(Hook),1,"qa.route","run.route",0,true,NULL,Route};
+    mdo_result Code=R->AddHook(R->Context,&Hook,E,N);if(Code)return Code;
+    Hook.Id="qa.route.finishing";Hook.Topic="run.finished";Hook.Transform=false;Hook.Execute=Finishing;
     return R->AddHook(R->Context,&Hook,E,N);
 }
 MDO_EXPORT const mdo_module_v1* mdoModuleEntry(void){
