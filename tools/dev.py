@@ -34,13 +34,13 @@ def request(method, path, body=None, timeout=10):
     env = environment()
     headers = {}
     if body is not None:
-        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = "application/octet-stream" if isinstance(body, bytes) else "application/json"
     if method not in ("GET", "HEAD", "OPTIONS"):
         _, bootstrap_headers, _ = request("GET", "/api/v1/bootstrap")
         headers["X-Mdo-Write-Token"] = bootstrap_headers.get("x-mdo-write-token", "")
     client = http.client.HTTPConnection("127.0.0.1", env["port"], timeout=timeout)
     try:
-        client.request(method, path, json.dumps(body).encode() if body is not None else None, headers)
+        client.request(method, path, body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else None, headers)
         response = client.getresponse()
         data = response.read()
         return response.status, {k.lower(): v for k, v in response.getheaders()}, json.loads(data)
@@ -165,20 +165,30 @@ def stop():
 
 
 def install():
-    from package import payload
-    source = payload()
-    manifest = source["manifest"]
-    installed = next((p for p in call("plugin.list")["items"] if p["id"] == manifest["id"]), None)
-    applied = call("plugin.apply", {**source, "expected_revision": installed["revision"] if installed else ""})
-    if any(p["id"] == manifest["id"] and p["enabled"] for p in applied["items"]):
-        print(json.dumps({k: applied.get(k) for k in ("pending", "restart_required", "recovery_mode")}))
-        return
-    plan = call("plugin.plan", {"changes": [{"id": manifest["id"], "enabled": True}]})
-    if not plan["allowed"]:
-        raise RuntimeError(plan)
-    result = call("plugin.commit", {"changes": [{"id": manifest["id"], "enabled": True}],
-        "expected_revision": plan["base_revision"], "expected_plan": plan["plan_revision"]})
-    print(json.dumps({k: result.get(k) for k in ("pending", "restart_required", "recovery_mode")}))
+    from package import build
+    # Feed only ordinary ZIP bytes to the common task/install transaction.
+    archive = build(ROOT / "dist")[0]
+    data = archive.read_bytes()
+    code, _, reply = request("POST", "/api/v1/extension-tasks", dict(
+        kind="plugins", purpose="install", filename=archive.name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
+    if code != 200: raise RuntimeError((code, reply))
+    task = reply["data"]["id"]
+    try:
+        for offset in range(0, len(data), 1048576):
+            code, _, reply = request("PUT", f"/api/v1/extension-tasks/{task}/chunks/{offset}", data[offset:offset+1048576])
+            if code != 200: raise RuntimeError((code, reply))
+        code, _, reply = request("POST", f"/api/v1/extension-tasks/{task}/seal", {})
+        if code != 200: raise RuntimeError((code, reply))
+        items = call("extension.list", {"kind":"plugins"})["items"]
+        current = next((p for p in items if p["id"] == "mohists"), None)
+        body = dict(id="mohists", trust_code=True, enabled=True,
+                    expected_revision=current["revision"] if current else "")
+        code, _, reply = request("POST", f"/api/v1/extension-tasks/{task}/install", body)
+        if code != 200: raise RuntimeError((code, reply))
+        print(json.dumps(reply["data"], ensure_ascii=False))
+    except BaseException:
+        request("DELETE", f"/api/v1/extension-tasks/{task}")
+        raise
 
 
 def main():

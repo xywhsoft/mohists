@@ -38,7 +38,7 @@ python tools/dev.py stop
 
 ## 源码分发
 
-`python tools/package.py` 生成可复现的插件源码 ZIP 与 SHA-256 清单，体积约 60 KB，不包含开发 Home。解压后可在 mdo 插件页面导入目录。生态安装 JSON 需要显式指定兼容宿主的 `--min-build-id`；目前新增 SDK 仅有源码基线，尚未指定公开发布版本。
+`python tools/package.py` 生成根目录含 extension.json 的完整普通 ZIP 与 SHA-256 清单。发布、下载和本机导入都使用这个 ZIP；不再生成 JSON 分发包或最低构建号。插件通过现有 AddAgent 注册四个角色，不覆盖旧的单文件角色路径。开发 Home、账号和协作数据不进入发布包。
 
 安装、更新、主讲和恢复的操作说明见 [使用指南](docs/user-guide.md)。源码分发、原生更新/回滚/停用/卸载/重装、创作中心导出及本地生态导入已在唯一开发实例实际验证；不会回滚或丢弃协作数据。
 

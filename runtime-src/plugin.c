@@ -14,6 +14,7 @@
 #include "schemas.h"
 #include "history.h"
 #include "handoff.h"
+#include "roles.inc.h"
 
 static mdo_result TeamCall(void* User, const mdo_sdk_context_v1* S,
     const xvalue* P, xvalue** R, mdo_error_v1* E) {
@@ -107,6 +108,7 @@ static mdo_result Register(const mdo_host_services_v1* H,
         snprintf(Error, Capacity, "Mohists requires an mdo host with persistent main-member routing, session.execution and session.mark_external_state. Upgrade the mdo runtime before enabling this plugin.");
         return MDO_RESULT_ERROR;
     }
+    if (MhRegisterRoles(R, Error, Capacity) != MDO_RESULT_OK) return MDO_RESULT_ERROR;
     mdo_service_v1 S = {sizeof(S), 1, "mohists.status", "Mohists status",
         "{}", "{}", MDO_TOOL_EFFECT_READ, NULL, Status};
     if (R->AddService(R->Context, &S, Error, Capacity)) return MDO_RESULT_ERROR;

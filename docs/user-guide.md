@@ -8,7 +8,7 @@
 
 需要包含 `mdo-runtime.json` 所列源码基线的 mdo。ABI 1 本身不足以证明兼容：还必须支持持久成员主讲路由、真实成员历史、`session.execution` 和 `session.mark_external_state`。不支持的旧宿主会明确拒绝加载。当前源码基线尚不能当成已公开发布的客户端版本。
 
-`python tools/package.py` 生成可复现的作者源码 ZIP 和校验清单。将来生成创作中心/本地生态导入文件时，需要明确提供兼容宿主的安装编号，例如 `--min-build-id <build_id>`。不要使用语义版本编码替代 build_id，也不要把开发宿主的编号当成已发布的兼容承诺。
+`python tools/package.py` 生成根目录含 extension.json 的完整普通 ZIP 与 SHA-256 清单。发布、下载和本机导入都使用这个 ZIP；不再生成 JSON 分发包或最低构建号。插件通过现有 AddAgent 注册四个角色，不覆盖旧的单文件角色路径。开发 Home、账号和协作数据不进入发布包。
 
 ## 协作窗口
 
