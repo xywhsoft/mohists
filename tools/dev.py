@@ -107,7 +107,7 @@ def start():
         pass
     with (RUNTIME / "host.log").open("ab") as log:
         child = subprocess.Popen([env["host"], str(RUNTIME / "xs.json"), "--", "--home", str(RUNTIME / "home")],
-            cwd=ROOT, env=dict(os.environ, USE_WEBVIEW="0"), stdout=log, stderr=log,
+            cwd=RUNTIME, env=dict(os.environ, USE_WEBVIEW="0", MDO_HOME=str(RUNTIME / "home")), stdout=log, stderr=log,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     write_json(RUNTIME / "process.json", {"pid": child.pid})
     for _ in range(120):
@@ -179,13 +179,13 @@ def install():
             if code != 200: raise RuntimeError((code, reply))
         code, _, reply = request("POST", f"/api/v1/extension-tasks/{task}/seal", {})
         if code != 200: raise RuntimeError((code, reply))
-        items = call("extension.list", {"kind":"plugins"})["items"]
+        items = call("extension.list", {"kind":"plugins"})
         current = next((p for p in items if p["id"] == "mohists"), None)
         body = dict(id="mohists", trust_code=True, enabled=True,
-                    expected_revision=current["revision"] if current else "")
+                    expected_revision=request("GET","/api/v1/extensions/plugins/mohists")[2]["data"]["revision"] if current else "")
         code, _, reply = request("POST", f"/api/v1/extension-tasks/{task}/install", body)
         if code != 200: raise RuntimeError((code, reply))
-        print(json.dumps(reply["data"], ensure_ascii=False))
+        print(json.dumps(reply["data"], ensure_ascii=True))
     except BaseException:
         request("DELETE", f"/api/v1/extension-tasks/{task}")
         raise

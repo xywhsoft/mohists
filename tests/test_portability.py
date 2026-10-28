@@ -28,10 +28,9 @@ def restart():
 def main():
     assert not any(p["id"] == QA for p in call("plugin.list")["items"]), "Keep a pre-existing test plugin"
     source = Path(__file__).with_name("portability-service.c").read_text(encoding="utf-8")
-    call("plugin.apply", {"id": QA, "expected_revision": "", "manifest": {
-        "format": "mdo.plugin.v1", "id": QA, "name": "Portability acceptance", "version": "0.1.0",
-        "description": "Temporary public native API acceptance", "author": "xywhsoft", "license": "MIT",
-        "entry": {"native": "probe.c"}, "overrides": []}, "files": [{"path": "probe.c", "text": source}]})
+    call("extension.save", {"kind":"plugins","id":QA,"expected_revision":"","trust_code":True,
+        "manifest":{"kind":"plugins","name":"Portability acceptance","alias":QA,"entry":"plugin.json","platforms":["any"],"license":"MIT"},
+        "edits":[{"path":"plugin.json","text":json.dumps({"entry":{"native":"probe.c"}})},{"path":"probe.c","text":source}]})
     try:
         changes({QA: True})
         restart()
@@ -110,14 +109,14 @@ def main():
                 assert not probe["captured"] and "outside its session directory" in probe["message"], probe
             assert capture(plain)["file_count"] == ordinary["file_count"], "Unrelated ordinary session backup must remain available"
             changes({"mohists": True, QA: False})
-            call("plugin.remove", {"id": QA})
+            call("extension.remove", {"kind":"plugins","id":QA,"expected_revision":call("extension.fingerprint",{"kind":"plugins","id":QA})["sha256"]})
             restart()
             assert team("get") == saved and team("history", member="scholar", limit=64) == history
             assert len(model.server.requests) == 2
     finally:
         if any(p["id"] == QA for p in call("plugin.list")["items"]):
             changes({"mohists": True, QA: False})
-            call("plugin.remove", {"id": QA})
+            call("extension.remove", {"kind":"plugins","id":QA,"expected_revision":call("extension.fingerprint",{"kind":"plugins","id":QA})["sha256"]})
             restart()
     print("PASS ordinary full backup, capture/mark exclusion, explicit incomplete-backup rejection, stored transfer capture guard and persistence across plugin disable; two local model calls")
 
