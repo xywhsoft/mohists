@@ -28,7 +28,7 @@ def main():
         "passed": False, "cases": []}
     output = RUNTIME / "acceptance/full-regression.json"
     commands = [(name, [sys.executable, "-u", str(ROOT / "tests" / name)]) for name in CASES]
-    commands.append(("store.test.mjs", [node, "--test", str(ROOT / "tests/store.test.mjs")]))
+    commands.append(("frontend", [node, "--test", str(ROOT / "tests/store.test.mjs"),str(ROOT / "tests/new-session.test.mjs")]))
     for name, command in commands:
         row = {"name": name, "state": "running"}
         report["cases"].append(row)

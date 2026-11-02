@@ -30,5 +30,5 @@ static mdo_result Register(const mdo_host_services_v1* H,const mdo_registrar_v1*
     return R->AddHook(R->Context,&Hook,E,N);
 }
 MDO_EXPORT const mdo_module_v1* mdoModuleEntry(void){
-    static const mdo_module_v1 M={sizeof(M),1,"qa.route","Route acceptance","Local route acceptance","1.0.0",MDO_CAPABILITY_APPLICATION,NULL,0,Register,NULL};return &M;
+    static const mdo_module_v1 M={sizeof(M),1,MDO_PLUGIN_ID,"Route acceptance","Local route acceptance","1.0.0",MDO_CAPABILITY_APPLICATION,NULL,0,Register,NULL};return &M;
 }

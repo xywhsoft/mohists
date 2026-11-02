@@ -3,6 +3,7 @@ import sys
 import time
 import base64
 import http.client
+import json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from dev import call, request, stop, start, RUNTIME, environment
@@ -13,8 +14,8 @@ from directory_fixture import create, remove
 def main():
     alias = "mohists-route"
     try:
-        create("tools",alias,"hook.c",{"hook.c":Path(__file__).with_name("route-hook.c").read_text(encoding="utf-8")})
-        create("agents",alias,"agent.md",{"agent.md":"---\nschema: mdo.agent.v1\nname: Route acceptance\nmode: primary\n---\nReply briefly.\n"})
+        create("plugins",alias,"plugin.json",{"plugin.json":json.dumps({"entry":{"native":"hook.c"}}),"hook.c":Path(__file__).with_name("route-hook.c").read_text(encoding="utf-8")})
+        create("agents",alias,"agent.md",{"agent.md":"---\nschema: mdo.agent.v1\nname: Route acceptance\ndescription: Verify interactive member routing\nmode: primary\nextends: mdo.general\n---\nReply briefly.\n"})
         stop(); start()
         with LocalModel() as model:
             model.configure(call)
@@ -77,7 +78,7 @@ def main():
                 upload.request("POST", f"/api/v1/projects/mohists/sessions/{owner}/attachments",
                     base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF1sAAAAASUVORK5CYII="),
                     {"Content-Type": "image/png", "X-Mdo-File-Name": "pixel.png", "X-Mdo-Write-Token": headers["x-mdo-write-token"]})
-                response = upload.getresponse(); import json
+                response = upload.getresponse()
                 image = json.loads(response.read()); assert response.status == 201, image
             finally: upload.close()
             model.server.reply = "image-and-tool-result"; model.server.tool_call = True
@@ -119,7 +120,7 @@ def main():
             assert direct["state"] == "succeeded" and direct["agent_id"] == "agent.mohists-route", direct
             assert len(model.server.requests) == 9, "Only actual native requests, including a tool continuation, explicit recovery and post-release turn"
     finally:
-        remove("tools",alias); remove("agents",alias)
+        remove("agents",alias); remove("plugins",alias)
         stop(); start()
     print("PASS native interactive member routing, long full input/output, true source, unchanged coordinator and shared cancellation")
 
