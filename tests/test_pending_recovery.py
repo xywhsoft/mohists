@@ -46,7 +46,7 @@ def main():
             tool = pending["items"][0]
             assert tool["tool"] == "exec" and not tool["automatic_retry_safe"] and marker.name in tool["arguments_json"], tool
             assert team("recovery", id=task)["recovery"] == pending
-            other = call("session.create", {"body": {"project_id": "mohists"}})["data"]["id"]
+            other = call("session.create", {"body": {"project_id": "mohists", "model_id": "mohists-local"}})["data"]["id"]
             generation = team("get")["generation"]
             assert call("instance.recovery", {"namespace": f"mohists.{owner}.g{generation}", "id": f"worker-{index}"},
                 context={"project": "mohists", "session": other}, status=403)["code"] == "sdk_instance_recovery_scope"

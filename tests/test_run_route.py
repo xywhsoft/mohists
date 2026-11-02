@@ -7,16 +7,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from dev import call, request, stop, start, RUNTIME, environment
 from model_fixture import LocalModel
+from directory_fixture import create, remove
 
 
 def main():
-    module = RUNTIME / "home/modules/tools/mohists-route.c"
-    role = RUNTIME / "home/agents/mohists-route.md"
-    assert not module.exists() and not role.exists()
+    alias = "mohists-route"
     try:
-        module.parent.mkdir(parents=True, exist_ok=True)
-        module.write_text(Path(__file__).with_name("route-hook.c").read_text(encoding="utf-8"), encoding="utf-8")
-        role.write_text("---\nschema: mdo.agent.v1\nname: Route acceptance\nextends: mdo.general\n---\nReply briefly.\n", encoding="utf-8")
+        create("tools",alias,"hook.c",{"hook.c":Path(__file__).with_name("route-hook.c").read_text(encoding="utf-8")})
+        create("agents",alias,"agent.md",{"agent.md":"---\nschema: mdo.agent.v1\nname: Route acceptance\nmode: primary\n---\nReply briefly.\n"})
         stop(); start()
         with LocalModel() as model:
             model.configure(call)
@@ -121,7 +119,7 @@ def main():
             assert direct["state"] == "succeeded" and direct["agent_id"] == "agent.mohists-route", direct
             assert len(model.server.requests) == 9, "Only actual native requests, including a tool continuation, explicit recovery and post-release turn"
     finally:
-        module.unlink(missing_ok=True); role.unlink(missing_ok=True)
+        remove("tools",alias); remove("agents",alias)
         stop(); start()
     print("PASS native interactive member routing, long full input/output, true source, unchanged coordinator and shared cancellation")
 

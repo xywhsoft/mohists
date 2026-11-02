@@ -6,22 +6,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from dev import call, stop, start, RUNTIME
 from model_fixture import LocalModel
+from directory_fixture import create, remove
 
 
 def main():
-    roles = RUNTIME / "home/agents"
-    roles.mkdir(exist_ok=True)
-    modules = RUNTIME / "home/modules/agents"
-    modules.mkdir(parents=True, exist_ok=True)
-    source, config = modules / "mohists-origin.c", roles / "mohists-origin.md"
-    commands = RUNTIME / "home/commands"; commands.mkdir(exist_ok=True)
-    command = commands / "mohists-origin.c"
-    assert not source.exists() and not config.exists(), "Keep an existing user role"
-    assert not command.exists(), "Keep an existing user command"
+    alias = "mohists-origin"
     try:
-        source.write_text(Path(__file__).with_name("origin-role.c").read_text(encoding="utf-8"), encoding="utf-8")
-        config.write_text("---\nschema: mdo.agent.v1\nname: Origin acceptance\ncode: true\n---\n", encoding="utf-8")
-        command.write_text(Path(__file__).with_name("origin-command.c").read_text(encoding="utf-8"), encoding="utf-8")
+        create("agents",alias,"agent.c",{"agent.c":Path(__file__).with_name("origin-role.c").read_text(encoding="utf-8")})
+        create("commands",alias,"command.c",{"command.c":Path(__file__).with_name("origin-command.c").read_text(encoding="utf-8")})
         stop(); start()
         with LocalModel() as model:
             model.configure(call)
@@ -58,7 +50,7 @@ def main():
             assert user_command["result"]["origin"] == "user" and user_command["result"]["worker_origin"] == 1, user_command
             assert len(model.server.requests) == 1
     finally:
-        source.unlink(missing_ok=True); config.unlink(missing_ok=True); command.unlink(missing_ok=True)
+        remove("agents",alias); remove("commands",alias)
         stop(); start()
     print("PASS root C Agent and editor-command origins, background propagation, passive messages and user-only recovery/settings")
 

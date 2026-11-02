@@ -7,7 +7,7 @@ from dev import call
 
 
 def session():
-    value = call("session.create", {"body": {"project_id": "default"}})
+    value = call("session.create", {"body": {"project_id": "default", "model_id": "mohists-local"}})
     return {"project": "default", "session": value["data"]["id"]}
 
 

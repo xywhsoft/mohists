@@ -43,7 +43,7 @@ def main():
             assert e["message_id"] == "task.long"
             assert e["source"] == "user"
         assert call("instance.history", {**params, "after": cursor}, context=ctx)["items"] == []
-        wrong = call("session.create", {"body": {"project_id": "default"}})["data"]["id"]
+        wrong = call("session.create", {"body": {"project_id": "default", "model_id": "mohists-local"}})["data"]["id"]
         denied = call("instance.history", params, context={"project": "default", "session": wrong}, status=403)
         assert denied["code"] == "sdk_instance_history_scope"
         assert call("instance.history", {**params, "after": 1}, context=ctx, status=409)["code"] == "sdk_instance_history_cursor"

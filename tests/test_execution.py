@@ -54,7 +54,7 @@ def main():
         assert snapshot["calls_used"] == 2 and snapshot["active"] == []
         empty = call("instance.step", {"namespace": f"mohists.{owner}.g1", "id": "reviewer"}, context=ctx)
         assert empty["no_work"] and empty["state"] == "idle", empty
-        other = call("session.create", {"body": {"project_id": "default"}})["data"]["id"]
+        other = call("session.create", {"body": {"project_id": "default", "model_id": "mohists-local"}})["data"]["id"]
         denied = call("instance.step", {"namespace": f"mohists.{owner}.g1", "id": "reader"},
             context={"project": "default", "session": other}, status=403)
         assert denied["code"] == "sdk_instance_scope", denied
