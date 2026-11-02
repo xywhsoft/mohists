@@ -9,6 +9,10 @@ function fixture() {
   }};},async call(method,p){calls.push({method,p});}};
   return {sdk,calls,context};
 }
+test("default creation identity follows the host's 32-hex session contract",async()=>{
+  const f=fixture();await createNewMohistsTask(f.sdk)();
+  assert.match(f.calls[0].p.body.client_session_id,/^[0-9a-f]{32}$/);
+});
 test("new Mohists task creates an empty conversation through public SDK and navigates only this client",async()=>{
   const f=fixture();await createNewMohistsTask(f.sdk,()=>"new-task")();
   assert.deepEqual(f.calls[0],{method:"session.create",scope:{project:"project",session:""},p:{body:{project_id:"project",client_session_id:"new-task",title:"墨者协作",agent_id:"agent.mohists"}}});

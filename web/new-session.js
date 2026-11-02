@@ -1,6 +1,6 @@
 /* Create an explicit Mohists conversation without changing global defaults.
  * Retain uncertain creation intent so a retry cannot create duplicate tasks. */
-export function createNewMohistsTask(sdk, newId = () => crypto.randomUUID()) {
+export function createNewMohistsTask(sdk, newId = () => crypto.randomUUID().replaceAll("-", "")) {
   let busy = false, pending = null;
   return async () => {
     if (busy) return;
