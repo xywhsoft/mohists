@@ -14,7 +14,7 @@ QA = "mohists-portability-qa"
 
 
 def changes(values):
-    change = [{"id": key, "enabled": value} for key, value in values.items()]
+    change = [{"id": key if ":" in key else "plugin:"+key, "enabled": value} for key, value in values.items()]
     plan = call("plugin.plan", {"changes": change})
     assert plan["allowed"], plan
     call("plugin.commit", {"changes": change, "expected_revision": plan["base_revision"], "expected_plan": plan["plan_revision"]})
@@ -26,10 +26,10 @@ def restart():
 
 
 def main():
-    assert not any(p["id"] == QA for p in call("plugin.list")["items"]), "Keep a pre-existing test plugin"
+    assert not any(p["id"] == "plugin:"+QA for p in call("plugin.list")["items"]), "Keep a pre-existing test plugin"
     source = Path(__file__).with_name("portability-service.c").read_text(encoding="utf-8")
     call("extension.save", {"kind":"plugins","id":QA,"expected_revision":"","trust_code":True,
-        "manifest":{"kind":"plugins","name":"Portability acceptance","alias":QA,"entry":"plugin.json","platforms":["any"],"license":"MIT"},
+        "manifest":{"kind":"plugins","id":"plugin:"+QA,"name":"Portability acceptance","alias":QA,"entry":"plugin.json","platforms":["any"],"license":"MIT"},
         "edits":[{"path":"plugin.json","text":json.dumps({"entry":{"native":"probe.c"}})},{"path":"probe.c","text":source}]})
     try:
         changes({QA: True})
@@ -114,7 +114,7 @@ def main():
             assert team("get") == saved and team("history", member="scholar", limit=64) == history
             assert len(model.server.requests) == 2
     finally:
-        if any(p["id"] == QA for p in call("plugin.list")["items"]):
+        if any(p["id"] == "plugin:"+QA for p in call("plugin.list")["items"]):
             changes({"mohists": True, QA: False})
             call("extension.remove", {"kind":"plugins","id":QA,"expected_revision":call("extension.fingerprint",{"kind":"plugins","id":QA})["sha256"]})
             restart()

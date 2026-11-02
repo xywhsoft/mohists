@@ -164,31 +164,40 @@ def stop():
     print("Project mdo stopped")
 
 
-def install():
-    from package import build
-    # Feed only ordinary ZIP bytes to the common task/install transaction.
-    archive = build(ROOT / "dist")[0]
+def install_archive(archive, request_fn=request, directory="mohists"):
+    """Use the public raw-ZIP transaction; never write installed files directly."""
     data = archive.read_bytes()
-    code, _, reply = request("POST", "/api/v1/extension-tasks", dict(
+    code, _, reply = request_fn("POST", "/api/v1/extension-tasks", dict(
         kind="plugins", purpose="install", filename=archive.name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
     if code != 200: raise RuntimeError((code, reply))
     task = reply["data"]["id"]
     try:
         for offset in range(0, len(data), 1048576):
-            code, _, reply = request("PUT", f"/api/v1/extension-tasks/{task}/chunks/{offset}", data[offset:offset+1048576])
+            code, _, reply = request_fn("PUT", f"/api/v1/extension-tasks/{task}/chunks/{offset}", data[offset:offset+1048576])
             if code != 200: raise RuntimeError((code, reply))
-        code, _, reply = request("POST", f"/api/v1/extension-tasks/{task}/seal", {})
+        code, _, reply = request_fn("POST", f"/api/v1/extension-tasks/{task}/seal", {})
         if code != 200: raise RuntimeError((code, reply))
-        items = call("extension.list", {"kind":"plugins"})
-        current = next((p for p in items if p["id"] == "mohists"), None)
-        body = dict(id="mohists", trust_code=True, enabled=True,
-                    expected_revision=request("GET","/api/v1/extensions/plugins/mohists")[2]["data"]["revision"] if current else "")
-        code, _, reply = request("POST", f"/api/v1/extension-tasks/{task}/install", body)
+        code, _, reply = request_fn("GET", "/api/v1/extensions/plugins?limit=100")
         if code != 200: raise RuntimeError((code, reply))
-        print(json.dumps(reply["data"], ensure_ascii=True))
+        current = next((p for p in reply["data"]["items"] if p.get("directory_id") == directory), None)
+        revision = ""
+        if current:
+            code, _, reply = request_fn("GET", "/api/v1/extensions/plugins/" + directory)
+            if code != 200: raise RuntimeError((code, reply))
+            revision = reply["data"]["revision"]
+        body = dict(id=directory, trust_code=True, enabled=True,
+                    expected_revision=revision)
+        code, _, reply = request_fn("POST", f"/api/v1/extension-tasks/{task}/install", body)
+        if code != 200: raise RuntimeError((code, reply))
+        return reply["data"]
     except BaseException:
-        request("DELETE", f"/api/v1/extension-tasks/{task}")
+        request_fn("DELETE", f"/api/v1/extension-tasks/{task}")
         raise
+
+
+def install():
+    from package import build
+    print(json.dumps(install_archive(build(ROOT / "dist")[0]), ensure_ascii=True))
 
 
 def main():

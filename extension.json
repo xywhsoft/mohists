@@ -5,6 +5,7 @@
   "author": "xywhsoft",
   "license": "MIT",
   "kind": "plugins",
+  "id": "plugin:mohists",
   "alias": "mohists",
   "entry": "plugin.json",
   "platforms": [

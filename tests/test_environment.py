@@ -8,7 +8,7 @@ assert request("GET", "/api/v1/bootstrap")[0] == 200
 value = call("mohists.status")
 assert value == {"plugin": "mohists", "schema": "mohists.team.v1"}, value
 plugins = call("plugin.list")["items"]
-plugin = next(p for p in plugins if p["id"] == "mohists")
+plugin = next(p for p in plugins if p["id"] == "plugin:mohists")
 assert plugin["enabled"], plugin
 project = call("project.get", {"path": {"project": "mohists"}})["data"]
 assert Path(project["workspace_root"]).resolve() == Path(__file__).resolve().parents[1]

@@ -37,7 +37,7 @@ def main():
     with zipfile.ZipFile(archive) as z:
         assert z.testzip() is None
         manifest=json.loads(z.read("extension.json"));recipe=json.loads(z.read("plugin.json"))
-        assert manifest["kind"]=="plugins" and manifest["alias"]=="mohists"
+        assert manifest["kind"]=="plugins" and manifest["alias"]=="mohists" and manifest["id"]=="plugin:mohists"
         assert set(recipe)=={"entry","exclusive"} and not recipe.get("overrides")
         assert all(p in z.namelist() for p in recipe["entry"].values())
         assert not any(p.startswith(("runtime/",".build/","files/","payload/")) for p in z.namelist())
