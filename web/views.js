@@ -175,7 +175,12 @@ export function mountPanel(root, { sdk, store, openMember, signal }) {
     if (network || error) box.append(el("p", "mh-error", network ? errorText(network) : error));
     if (operationError) box.append(el("p", "mh-error", errorText(operationError)));
     if (loading) { box.append(el("p", "mh-empty", "正在读取…")); return; }
-    if (!team) { box.append(el("p", "mh-muted", "在左侧主输入框发送目标即可执行。简单任务由墨者直接完成，复杂任务按需分工；这里用于查看和管理协作。"), button("手动建立协作组", () => openStart(sdk, store))); return; }
+    if (!team) {
+      box.append(el("p", "mh-muted", "在左侧主输入框发送目标即可执行。简单任务由墨者直接完成，复杂任务按需分工；这里用于查看和管理协作。"));
+      const advanced = el("details"); advanced.append(el("summary", "mh-muted", "高级操作"),
+        el("p", "mh-form-hint", "手动建组只保存目标，不会发送消息或启动模型。"), button("手动建立协作组", () => openStart(sdk, store)));
+      box.append(advanced); return;
+    }
     box.append(append(el("div", "mh-line"), el("span", "mh-tag", teamLabel(team)), el("span", "mh-muted", `成员轮次 ${team.calls_used} / ${team.max_calls} · 并行上限 ${team.concurrency}`)));
     if (!team.assignment_items.length && !team.calls_used) box.append(el("p", "mh-muted", "协作组已建立，尚未分派成员。协调者的执行进度显示在左侧主对话；仅保存目标不会启动模型。"));
     box.append(el("p", "", team.goal));
