@@ -98,6 +98,25 @@ export async function openDefaults(sdk, store, signal) {
     return read;
   }, submit: settings => sdk.call("mohists.settings", { action: "save", expected_revision: current.revision, settings }) });
 }
+export async function mountDefaults(root, sdk, signal) {
+  root.classList.add("mh"); root.append(el("h2", "", "墨者设置"), el("p", "mh-muted", "在对话输入框的 Agent 选择器中选择墨者，然后发送目标即可开始。"));
+  const message = el("p", "mh-muted", "正在读取设置…"); root.append(message);
+  const [current, catalog] = await Promise.all([sdk.call("mohists.settings", { action: "get" }, { signal }), catalogs(sdk, signal)]);
+  if (signal.aborted) return;
+  message.remove(); const form = el("form"), fields = el("fieldset", "mh-form"), feedback = el("p", "mh-muted");
+  const read = configurationFields(fields, current.value, catalog, true);
+  const save = button("保存设置", () => form.requestSubmit(), "mh-primary");
+  form.append(fields, append(el("div", "mh-footer"), feedback, save)); root.append(form);
+  let revision = current.revision, busy = false;
+  form.onsubmit = async event => {
+    event.preventDefault(); if (busy || signal.aborted) return;
+    busy = true; fields.disabled = save.disabled = true; feedback.textContent = "保存中…";
+    try { const result = await sdk.call("mohists.settings", { action: "save", expected_revision: revision, settings: read() }, { signal });
+      if (!signal.aborted) { revision = result.revision; feedback.textContent = "设置已保存，仅对新协作生效。"; }
+    } catch (error) { if (!signal.aborted) feedback.textContent = errorText(error); }
+    finally { busy = false; fields.disabled = save.disabled = false; }
+  };
+}
 export async function openTeamConfig(sdk, store, signal) {
   const team = store.state.team, generation = team.generation, revision = team.revision;
   const catalog = await catalogs(sdk, signal); if (signal?.aborted) return; groupChanged(store, generation);
@@ -110,9 +129,9 @@ export async function openTeamConfig(sdk, store, signal) {
 
 export function openStart(sdk, store) {
   const generation = store.state.team?.generation ?? 0, groupId = id("team");
-  return windowForm(sdk, { store, title: "开始协作", save: "开始", render(root) {
+  return windowForm(sdk, { store, title: "手动建立协作组", save: "保存目标", render(root) {
     const goal = field(root, "协作目标", "textarea"); goal.required = true;
-    root.append(el("p", "mh-form-hint", "简单任务可直接在主对话完成；复杂任务再分派给成员。"));
+    root.append(el("p", "mh-form-hint", "这里只保存目标，不调用模型。保存后仍需在主输入框发送任务。通常直接在主输入框发送目标即可，无需手动建组。"));
     return () => ({ id: groupId, goal: goal.value });
   }, submit: p => store.mutate("start", p, generation) });
 }
@@ -129,20 +148,21 @@ export function openHandoff(sdk, store, job, generation = store.state.team.gener
   }, async submit(params) { groupChanged(store, generation); await store.mutate("handoff", params, generation); } });
 }
 
+const teamLabel = team => team.state === "active" && !team.assignment_items.length && !team.calls_used ? "待分工" : stateName(team.state);
 export function mountSummary(root, { sdk, store, openPanel }) {
   root.classList.add("mh");
   return store.subscribe(({ team, error, operationError }) => {
     root.replaceChildren(); if (!team && !error) return;
     const box = el("div", "mh-summary"); root.append(box);
     if (error) { box.append(el("p", "mh-error", errorText(error)), button("重新读取", () => store.refresh())); return; }
-    box.append(append(el("div", "mh-line"), el("strong", "mh-grow", "墨者 · 分工协作"), tag(team.state), button("查看分工", openPanel)));
+    box.append(append(el("div", "mh-line"), el("strong", "mh-grow", "墨者 · 分工协作"), el("span", "mh-tag", teamLabel(team)), button("查看分工", openPanel)));
     box.append(el("p", "mh-muted", team.goal)); const jobs = el("div", "mh-summary-jobs"); box.append(jobs);
     const speaker = append(el("div", "mh-line"), el("span", "mh-grow mh-muted", `当前主讲：${speakerName(team)}`)); box.append(speaker);
     if (team.speaker !== "coordinator") speaker.append(button("返回协调者", () => openHandoff(sdk, store)));
     if (operationError) box.append(el("p", "mh-error", errorText(operationError)));
     const counts = new Map(); for (const job of team.assignment_items) counts.set(job.state, (counts.get(job.state) || 0) + 1);
     for (const [state, count] of counts) jobs.append(el("span", "mh-tag", `${stateName(state)} ${count}`));
-    if (!counts.size) jobs.append(el("span", "mh-muted", "尚未分派成员，协调者可直接处理。"));
+    if (!counts.size) jobs.append(el("span", "mh-muted", "尚未分派成员。在主输入框发送目标后，协调者按需分工或直接处理。"));
   });
 }
 
@@ -155,8 +175,9 @@ export function mountPanel(root, { sdk, store, openMember, signal }) {
     if (network || error) box.append(el("p", "mh-error", network ? errorText(network) : error));
     if (operationError) box.append(el("p", "mh-error", errorText(operationError)));
     if (loading) { box.append(el("p", "mh-empty", "正在读取…")); return; }
-    if (!team) { box.append(el("p", "mh-muted", "按需分工，成员独立保留上下文。"), button("开始协作", () => openStart(sdk, store), "mh-primary")); return; }
-    box.append(append(el("div", "mh-line"), tag(team.state), el("span", "mh-muted", `成员轮次 ${team.calls_used} / ${team.max_calls} · 并行上限 ${team.concurrency}`)));
+    if (!team) { box.append(el("p", "mh-muted", "在左侧主输入框发送目标即可执行。简单任务由墨者直接完成，复杂任务按需分工；这里用于查看和管理协作。"), button("手动建立协作组", () => openStart(sdk, store))); return; }
+    box.append(append(el("div", "mh-line"), el("span", "mh-tag", teamLabel(team)), el("span", "mh-muted", `成员轮次 ${team.calls_used} / ${team.max_calls} · 并行上限 ${team.concurrency}`)));
+    if (!team.assignment_items.length && !team.calls_used) box.append(el("p", "mh-muted", "协作组已建立，尚未分派成员。协调者的执行进度显示在左侧主对话；仅保存目标不会启动模型。"));
     box.append(el("p", "", team.goal));
     const speaker = append(el("div", "mh-card mh-stack"), el("strong", "", `当前主讲：${speakerName(team)}`)); box.append(speaker);
     if (team.speaker_binding?.model_id) speaker.append(el("p", "mh-muted", team.speaker_binding.model_id));

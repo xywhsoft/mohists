@@ -11,7 +11,7 @@ import time
 from dev import ROOT, RUNTIME, call, environment, write_json
 
 CASES = (
-    "test_environment.py", "test_state_scale.py", "test_team.py", "test_execution.py", "test_control.py",
+    "test_environment.py", "test_agent_selection.py", "test_state_scale.py", "test_team.py", "test_execution.py", "test_control.py",
     "test_recovery.py", "test_scheduler.py", "test_history.py", "test_policy.py",
     "test_pending_recovery.py", "test_origin.py", "test_settings.py", "test_coordinator_flow.py",
     "test_run_route.py", "test_handoff.py", "test_handoff_recovery.py",
@@ -28,7 +28,7 @@ def main():
         "passed": False, "cases": []}
     output = RUNTIME / "acceptance/full-regression.json"
     commands = [(name, [sys.executable, "-u", str(ROOT / "tests" / name)]) for name in CASES]
-    commands.append(("frontend", [node, "--test", str(ROOT / "tests/store.test.mjs"),str(ROOT / "tests/new-session.test.mjs")]))
+    commands.append(("frontend", [node, "--test", str(ROOT / "tests/store.test.mjs"),str(ROOT / "tests/agent-ui.test.mjs")]))
     for name, command in commands:
         row = {"name": name, "state": "running"}
         report["cases"].append(row)

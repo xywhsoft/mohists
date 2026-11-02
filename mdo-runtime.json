@@ -1,6 +1,7 @@
 {
   "repository": "../mdo",
-  "minimum_source_commit": "aa319c8713682cc4a7c9f47620d503db14ad405f",
+  "minimum_source_commit": "cc4198e5613e43b1c964391a2f75601f9ab3fefb",
   "sdk_abi": 1,
+  "required_frontend": ["ui.registerAgent", "ui.registerSettingsPage"],
   "required_methods": ["instance.history", "instance.recovery", "instance.step", "state.transaction", "operation.start", "session.execution", "session.mark_external_state"]
 }
